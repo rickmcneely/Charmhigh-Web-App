@@ -478,6 +478,7 @@
 
   <button id="btn-load-dpv" class="btn">Load DPV</button>
   <button id="btn-save-dpv" class="btn">Save DPV</button>
+  <button id="btn-validate-dpv" class="btn" title="Check DPV data for errors">Validate</button>
 
   <div class="offset-divider"></div>
 
@@ -1286,6 +1287,214 @@
       readDpvTableFromDom('table-dpv-panel-coord','Panel_Coord');
     }
 
+    // Validate DPV data and return array of issues
+    function validateDpv() {
+      const issues = [];
+      const warnings = [];
+
+      const station = dpvModel.tables['Station'];
+      const ecomp = dpvModel.tables['EComponent'];
+      const pArray = dpvModel.tables['Panel_Array'];
+
+      // Build set of valid Station IDs
+      const stationIds = new Set();
+      const stationIdToNote = {};
+      if (station && station.header.length && station.rows.length) {
+        const idIdx = station.header.indexOf('ID');
+        const noteIdx = station.header.indexOf('Note');
+        if (idIdx !== -1) {
+          station.rows.forEach(row => {
+            const id = (row[idIdx] || '').trim();
+            if (id) {
+              stationIds.add(id);
+              if (noteIdx !== -1) stationIdToNote[id] = (row[noteIdx] || '').trim();
+            }
+          });
+        }
+      }
+
+      // Check EComponent STNo. references
+      if (ecomp && ecomp.header.length && ecomp.rows.length) {
+        const stNoIdx = ecomp.header.indexOf('STNo.');
+        const explainIdx = ecomp.header.indexOf('Explain');
+        const noteIdx = ecomp.header.indexOf('Note');
+        const noIdx = ecomp.header.indexOf('No.');
+
+        if (stNoIdx !== -1) {
+          const missingRefs = {};
+          ecomp.rows.forEach(row => {
+            const stNo = (row[stNoIdx] || '').trim();
+            if (stNo && !stationIds.has(stNo)) {
+              const explain = explainIdx !== -1 ? (row[explainIdx] || '').trim() : '';
+              const note = noteIdx !== -1 ? (row[noteIdx] || '').trim() : '';
+              const rowNo = noIdx !== -1 ? (row[noIdx] || '').trim() : '?';
+              if (!missingRefs[stNo]) missingRefs[stNo] = [];
+              missingRefs[stNo].push({ rowNo, explain, note });
+            }
+          });
+
+          for (const stNo in missingRefs) {
+            const refs = missingRefs[stNo];
+            const sample = refs[0];
+            issues.push({
+              type: 'missing_station',
+              stNo: stNo,
+              count: refs.length,
+              explain: sample.explain,
+              message: `STNo. ${stNo} referenced by ${refs.length} component(s) (e.g., "${sample.explain}") but Station ID ${stNo} does not exist.`
+            });
+          }
+        }
+      }
+
+      // Check Panel_Array for issues
+      if (pArray && pArray.header.length && pArray.rows.length) {
+        const numXIdx = pArray.header.indexOf('NumX');
+        const numYIdx = pArray.header.indexOf('NumY');
+        const idIdx = pArray.header.indexOf('ID');
+
+        if (numXIdx !== -1 && numYIdx !== -1) {
+          pArray.rows.forEach((row, idx) => {
+            const numX = parseInt(row[numXIdx], 10) || 0;
+            const numY = parseInt(row[numYIdx], 10) || 0;
+            if (numX === 0 && numY === 0 && idx > 0) {
+              warnings.push({
+                type: 'panel_array_zero',
+                rowIdx: idx,
+                message: `Panel_Array row ${idx} has NumX=0 and NumY=0, which may cause issues.`
+              });
+            }
+          });
+        }
+
+        // Check for duplicate IDs
+        if (idIdx !== -1) {
+          const seenIds = {};
+          pArray.rows.forEach((row, idx) => {
+            const id = (row[idIdx] || '').trim();
+            if (id) {
+              if (seenIds[id] !== undefined) {
+                warnings.push({
+                  type: 'panel_array_duplicate',
+                  id: id,
+                  message: `Panel_Array has duplicate ID ${id} (rows ${seenIds[id]} and ${idx}).`
+                });
+              } else {
+                seenIds[id] = idx;
+              }
+            }
+          });
+        }
+      }
+
+      // Check for gaps in Station IDs
+      if (stationIds.size > 0) {
+        const ids = Array.from(stationIds).map(id => parseInt(id, 10)).filter(n => !isNaN(n)).sort((a, b) => a - b);
+        const maxId = Math.max(...ids);
+        const minId = Math.min(...ids);
+        const gaps = [];
+        for (let i = minId; i <= maxId; i++) {
+          if (!ids.includes(i)) gaps.push(i);
+        }
+        if (gaps.length > 0 && gaps.length <= 20) {
+          warnings.push({
+            type: 'station_id_gaps',
+            gaps: gaps,
+            message: `Station IDs have gaps: ${gaps.join(', ')}. This may cause STNo. reference issues.`
+          });
+        }
+      }
+
+      return { issues, warnings };
+    }
+
+    // Fix STNo. references by matching Explain to Station Note
+    function fixStNoReferences() {
+      rebuildDpvModelFromDom();
+
+      const station = dpvModel.tables['Station'];
+      const ecomp = dpvModel.tables['EComponent'];
+
+      if (!station || !ecomp) {
+        alert('No Station or EComponent data to fix.');
+        return false;
+      }
+
+      // Build map from Note to Station ID
+      const noteToId = {};
+      const idIdx = station.header.indexOf('ID');
+      const noteIdx = station.header.indexOf('Note');
+      if (idIdx === -1 || noteIdx === -1) {
+        alert('Station table missing ID or Note columns.');
+        return false;
+      }
+
+      station.rows.forEach(row => {
+        const id = (row[idIdx] || '').trim();
+        const note = (row[noteIdx] || '').trim();
+        if (id && note) noteToId[note] = id;
+      });
+
+      // Update EComponent STNo. based on Explain matching Station Note
+      const stNoIdx = ecomp.header.indexOf('STNo.');
+      const explainIdx = ecomp.header.indexOf('Explain');
+      if (stNoIdx === -1 || explainIdx === -1) {
+        alert('EComponent table missing STNo. or Explain columns.');
+        return false;
+      }
+
+      let fixedCount = 0;
+      ecomp.rows.forEach(row => {
+        const explain = (row[explainIdx] || '').trim();
+        if (explain && noteToId[explain]) {
+          const currentStNo = (row[stNoIdx] || '').trim();
+          const correctStNo = noteToId[explain];
+          if (currentStNo !== correctStNo) {
+            row[stNoIdx] = correctStNo;
+            fixedCount++;
+          }
+        }
+      });
+
+      if (fixedCount > 0) {
+        renderDpvTabsFromModel();
+        return fixedCount;
+      }
+      return 0;
+    }
+
+    // Fix Panel_Array issues - remove rows with NumX=0 and NumY=0
+    function fixPanelArrayIssues() {
+      rebuildDpvModelFromDom();
+      const pArray = dpvModel.tables['Panel_Array'];
+      if (!pArray || !pArray.rows.length) return 0;
+
+      const numXIdx = pArray.header.indexOf('NumX');
+      const numYIdx = pArray.header.indexOf('NumY');
+      if (numXIdx === -1 || numYIdx === -1) return 0;
+
+      const originalCount = pArray.rows.length;
+      pArray.rows = pArray.rows.filter((row, idx) => {
+        // Keep first row, filter out zero rows
+        if (idx === 0) return true;
+        const numX = parseInt(row[numXIdx], 10) || 0;
+        const numY = parseInt(row[numYIdx], 10) || 0;
+        return !(numX === 0 && numY === 0);
+      });
+
+      // Renumber No. column
+      const noIdx = pArray.header.indexOf('No.');
+      if (noIdx !== -1) {
+        pArray.rows.forEach((row, idx) => { row[noIdx] = String(idx); });
+      }
+
+      const removed = originalCount - pArray.rows.length;
+      if (removed > 0) {
+        renderDpvTabsFromModel();
+      }
+      return removed;
+    }
+
     function dpvToText() {
       const lines = [];
       dpvModel.headerLines.forEach(l => lines.push(l));
@@ -1673,8 +1882,12 @@
         updateComponentsStNo(oldId, newId);
       }
 
-      // Always sort by ID after any edit
+      // Always sort by ID after any edit, keeping the edited row selected
+      const $row = $cell.closest('tr');
       sortStationTableById();
+      // Re-select the row after sorting
+      $table.find('tbody tr').removeClass('selected');
+      $row.addClass('selected');
     });
 
     /* ---------- INITIAL TABLES ---------- */
@@ -1965,23 +2178,181 @@
       r.readAsText(file);
     });
 
-    $('#btn-save-dpv').on('click', async () => {
+    // Validate DPV button handler
+    $('#btn-validate-dpv').on('click', () => {
       rebuildDpvModelFromDom();
+      const { issues, warnings } = validateDpv();
 
-      // Apply offsets to a copy of the data for saving (don't modify displayed data)
+      if (issues.length === 0 && warnings.length === 0) {
+        alert('✓ DPV validation passed. No issues found.');
+        return;
+      }
+
+      let msg = '';
+      if (issues.length > 0) {
+        msg += '=== ERRORS (will prevent machine from running) ===\n\n';
+        issues.forEach((issue, i) => {
+          msg += `${i + 1}. ${issue.message}\n`;
+        });
+        msg += '\n';
+      }
+      if (warnings.length > 0) {
+        msg += '=== WARNINGS ===\n\n';
+        warnings.forEach((w, i) => {
+          msg += `${i + 1}. ${w.message}\n`;
+        });
+        msg += '\n';
+      }
+
+      // Check if we can auto-fix STNo. issues
+      const hasStNoIssues = issues.some(i => i.type === 'missing_station');
+      if (hasStNoIssues) {
+        msg += '\nWould you like to attempt auto-fix?\n(This will match EComponent values to Station Notes and update STNo. references)';
+        if (confirm(msg)) {
+          const fixed = fixStNoReferences();
+          if (fixed > 0) {
+            alert(`Fixed ${fixed} STNo. reference(s). Please validate again to confirm.`);
+          } else {
+            alert('No fixes could be applied. Station Notes may not match EComponent Explain values.');
+          }
+        }
+      } else {
+        alert(msg);
+      }
+    });
+
+    $('#btn-save-dpv').on('click', async () => {
+      try {
+        rebuildDpvModelFromDom();
+
+        // Validate before saving
+        const { issues, warnings } = validateDpv();
+      if (issues.length > 0) {
+        let msg = '=== DPV VALIDATION ERRORS ===\n\n';
+        issues.forEach((issue, i) => {
+          msg += `${i + 1}. ${issue.message}\n`;
+        });
+
+        // Check if we can auto-fix STNo. issues
+        const hasStNoIssues = issues.some(i => i.type === 'missing_station');
+        if (hasStNoIssues) {
+          msg += '\nAttempt auto-fix? (Matches EComponent values to Station Notes)';
+          if (confirm(msg)) {
+            const fixed = fixStNoReferences();
+            if (fixed > 0) {
+              alert(`Fixed ${fixed} STNo. reference(s). Continuing with save...`);
+              rebuildDpvModelFromDom(); // Refresh model after fix
+            } else {
+              alert('Could not auto-fix. Station Notes may not match EComponent Explain values.\n\nCancelling save.');
+              return;
+            }
+          } else {
+            // Ask if they want to save anyway
+            if (!confirm('Save with errors anyway?')) return;
+          }
+        } else {
+          msg += '\nSave anyway?';
+          if (!confirm(msg)) return;
+        }
+      }
+
+      if (warnings.length > 0) {
+        let warnMsg = 'Warnings:\n';
+        warnings.forEach((w, i) => {
+          warnMsg += `${i + 1}. ${w.message}\n`;
+        });
+
+        // Check for Panel_Array issues that can be fixed
+        const hasPanelIssues = warnings.some(w => w.type === 'panel_array_zero' || w.type === 'panel_array_duplicate');
+        if (hasPanelIssues) {
+          warnMsg += '\nFix Panel_Array issues? (Remove zero/duplicate rows)';
+          if (confirm(warnMsg)) {
+            const fixed = fixPanelArrayIssues();
+            if (fixed > 0) {
+              alert(`Removed ${fixed} problematic Panel_Array row(s). Continuing with save...`);
+              rebuildDpvModelFromDom();
+            }
+          }
+        } else {
+          warnMsg += '\nContinue with save?';
+          if (!confirm(warnMsg)) return;
+        }
+      }
+
+      // Check if there are any skipped components
+      let excludeSkipped = false;
+      if (dpvModel.tables['EComponent']) {
+        const ecomp = dpvModel.tables['EComponent'];
+        const skipIdx = ecomp.header.indexOf('Skip');
+        if (skipIdx !== -1) {
+          const hasSkipped = ecomp.rows.some(row => row[skipIdx] === '1');
+          if (hasSkipped) {
+            excludeSkipped = confirm('There are skipped components. Exclude them from saved DPV file?');
+          }
+        }
+      }
+
+      // Apply offsets and format coordinates
       const offsets = getOffsets();
-      if ((offsets.x !== 0 || offsets.y !== 0) && dpvModel.tables['EComponent']) {
+
+      // Helper to format coordinate to 2 decimal places
+      const formatCoord = (val) => {
+        const num = parseFloat(val) || 0;
+        return num.toFixed(2);
+      };
+
+      // Process EComponent table
+      if (dpvModel.tables['EComponent']) {
         const ecomp = dpvModel.tables['EComponent'];
         const deltXIdx = ecomp.header.indexOf('DeltX');
         const deltYIdx = ecomp.header.indexOf('DeltY');
+        const skipIdx = ecomp.header.indexOf('Skip');
+
+        // Filter out skipped rows if requested
+        if (excludeSkipped && skipIdx !== -1) {
+          ecomp.rows = ecomp.rows.filter(row => row[skipIdx] !== '1');
+          // Renumber the No. column after filtering
+          const noIdx = ecomp.header.indexOf('No.');
+          if (noIdx !== -1) {
+            ecomp.rows.forEach((row, idx) => { row[noIdx] = String(idx); });
+          }
+        }
+
+        // Apply offsets and format coordinates
         if (deltXIdx !== -1 && deltYIdx !== -1) {
           ecomp.rows.forEach(row => {
-            if (offsets.x !== 0) {
-              row[deltXIdx] = String((parseFloat(row[deltXIdx]) || 0) + offsets.x);
-            }
-            if (offsets.y !== 0) {
-              row[deltYIdx] = String((parseFloat(row[deltYIdx]) || 0) + offsets.y);
-            }
+            let x = parseFloat(row[deltXIdx]) || 0;
+            let y = parseFloat(row[deltYIdx]) || 0;
+            if (offsets.x !== 0) x += offsets.x;
+            if (offsets.y !== 0) y += offsets.y;
+            row[deltXIdx] = formatCoord(x);
+            row[deltYIdx] = formatCoord(y);
+          });
+        }
+      }
+
+      // Format coordinates in Station table
+      if (dpvModel.tables['Station']) {
+        const station = dpvModel.tables['Station'];
+        const deltXIdx = station.header.indexOf('DeltX');
+        const deltYIdx = station.header.indexOf('DeltY');
+        if (deltXIdx !== -1 && deltYIdx !== -1) {
+          station.rows.forEach(row => {
+            row[deltXIdx] = formatCoord(row[deltXIdx]);
+            row[deltYIdx] = formatCoord(row[deltYIdx]);
+          });
+        }
+      }
+
+      // Format coordinates in Panel_Coord table
+      if (dpvModel.tables['Panel_Coord']) {
+        const pcoord = dpvModel.tables['Panel_Coord'];
+        const deltXIdx = pcoord.header.indexOf('DeltX');
+        const deltYIdx = pcoord.header.indexOf('DeltY');
+        if (deltXIdx !== -1 && deltYIdx !== -1) {
+          pcoord.rows.forEach(row => {
+            row[deltXIdx] = formatCoord(row[deltXIdx]);
+            row[deltYIdx] = formatCoord(row[deltYIdx]);
           });
         }
       }
@@ -1993,9 +2364,11 @@
       ]);
       if (savedName) lastDpvFilename = savedName;
 
-      // Restore the displayed data (re-read from DOM to undo offset changes to model)
-      if (offsets.x !== 0 || offsets.y !== 0) {
-        rebuildDpvModelFromDom();
+      // Restore the displayed data (re-read from DOM to undo changes to model)
+      rebuildDpvModelFromDom();
+      } catch (err) {
+        console.error('Save DPV error:', err);
+        alert('Error saving DPV: ' + err.message);
       }
     });
 
