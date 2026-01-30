@@ -494,6 +494,7 @@
     <span class="unit">mm</span>
   </div>
   <div class="toolbar-spacer"></div>
+  <button id="btn-workflow" class="btn small" style="background:#2563eb;color:#fff;">Getting Started</button>
   <button id="btn-help" class="btn small">Help</button>
 </div>
 
@@ -646,6 +647,103 @@
       <button id="library-clear" class="btn small danger">Clear All</button>
       <span style="flex:1;"></span>
       <button id="library-close-footer" class="btn small">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Workflow / Getting Started Modal -->
+<div id="workflow-modal" class="modal-backdrop">
+  <div class="modal-dialog" style="max-width:800px;">
+    <div class="modal-header">
+      <h2>Getting Started – New Project Workflow</h2>
+      <button id="workflow-close" class="btn small">Close</button>
+    </div>
+    <div class="modal-body" style="max-height:70vh;overflow-y:auto;">
+      <div style="line-height:1.6;">
+        <h3 style="color:#2563eb;margin-top:0;">Overview</h3>
+        <p>This tool converts KiCad placement files to Charmhigh CHMT-48VB DPV format. The workflow involves loading your KiCad data, configuring feeder assignments, and exporting a machine-ready DPV file.</p>
+
+        <h3 style="color:#2563eb;">Step 1: Export from KiCad</h3>
+        <p>In KiCad PCB Editor:</p>
+        <ol>
+          <li>Go to <strong>File → Fabrication Outputs → Component Placement (.pos, .csv)</strong></li>
+          <li>Choose <strong>CSV</strong> format with <strong>millimeters</strong> as units</li>
+          <li>Select <strong>Top</strong> or <strong>Bottom</strong> side (process each side separately)</li>
+          <li>Save the file</li>
+        </ol>
+
+        <h3 style="color:#2563eb;">Step 2: Load CSV/POS File</h3>
+        <ol>
+          <li>Click <strong>Load CSV/POS</strong> in the toolbar</li>
+          <li>Select your KiCad placement file</li>
+          <li>Review the data in the <strong>CSV/POS</strong> tab</li>
+          <li>Optionally set <strong>X/Y Offset</strong> values to compensate for machine calibration</li>
+        </ol>
+
+        <h3 style="color:#2563eb;">Step 3: Convert to DPV</h3>
+        <ol>
+          <li>Click <strong>Export as DPV</strong></li>
+          <li>The system generates:
+            <ul>
+              <li><strong>Components</strong> – placement data (EComponent table)</li>
+              <li><strong>Material Stacks</strong> – feeder assignments (Station table)</li>
+              <li><strong>Panel List</strong> – panelization settings</li>
+            </ul>
+          </li>
+          <li>If you have a <strong>Master Feeder Library</strong>, matching settings are auto-applied</li>
+        </ol>
+
+        <h3 style="color:#2563eb;">Step 4: Configure Material Stacks (Feeders)</h3>
+        <p>Go to the <strong>Material Stacks</strong> tab:</p>
+        <ol>
+          <li><strong>ID</strong> = Physical feeder slot number on your machine (1-29 for front, 30+ for rear)</li>
+          <li><strong>PHead</strong> = Pick head (1 or 2)</li>
+          <li><strong>Note</strong> = Component value (e.g., "10k", "100nF") – this links feeders to components</li>
+          <li>Set <strong>DeltX/DeltY</strong> for pickup offset adjustments</li>
+          <li>Set <strong>Height</strong> for component thickness</li>
+        </ol>
+        <p><strong>Tip:</strong> Select configured rows and click <strong>Save to Library</strong> to reuse these settings in future projects!</p>
+
+        <h3 style="color:#2563eb;">Step 5: Review Components</h3>
+        <p>Go to the <strong>Components</strong> tab:</p>
+        <ol>
+          <li>Verify <strong>STNo.</strong> matches your feeder assignments</li>
+          <li>Set <strong>Skip = 1</strong> for components you don't want to place</li>
+          <li>Adjust <strong>Angle</strong> if rotation needs correction (Ctrl+Arrow keys)</li>
+          <li>Double-click <strong>Skip</strong> or <strong>PHead</strong> cells to toggle values</li>
+        </ol>
+
+        <h3 style="color:#2563eb;">Step 6: Configure Panels (Optional)</h3>
+        <p>If you have multiple boards on one panel, go to <strong>Panel List</strong>:</p>
+        <ol>
+          <li>Set <strong>NumX/NumY</strong> for array dimensions</li>
+          <li>Set <strong>IntervalX/IntervalY</strong> for board spacing</li>
+          <li>Add <strong>Panel_Coord</strong> entries for each board origin</li>
+        </ol>
+
+        <h3 style="color:#2563eb;">Step 7: Save DPV File</h3>
+        <ol>
+          <li>Click <strong>Save DPV</strong> in the toolbar</li>
+          <li>The system validates your data and offers to fix any issues</li>
+          <li>Choose whether to exclude skipped components (if any)</li>
+          <li>Save the file – this creates a standard Charmhigh DPV file</li>
+          <li>Transfer the DPV file to your CHMT-48VB machine</li>
+        </ol>
+
+        <h3 style="color:#2563eb;">Tips for Repeat Projects</h3>
+        <ul>
+          <li><strong>Master Feeder Library</strong> – Save your feeder configurations once, auto-apply to new projects</li>
+          <li><strong>Export/Import Stack Lists</strong> – Save/Load Material Stacks as DPVx files for specific projects</li>
+          <li><strong>Consistent Component Values</strong> – Use consistent naming in KiCad (e.g., "10k" not "10K" or "10kohm") for reliable library matching</li>
+        </ul>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#6b7280;">
+        <input type="checkbox" id="workflow-dont-show"> Don't show this on startup
+      </label>
+      <span style="flex:1;"></span>
+      <button id="workflow-close-footer" class="btn small">Got it!</button>
     </div>
   </div>
 </div>
@@ -3373,6 +3471,34 @@
       };
       r.readAsText(result.file);
     });
+
+    /* ---------- Workflow / Getting Started modal ---------- */
+
+    const WORKFLOW_HIDE_KEY = 'chmt48vb_hide_workflow';
+
+    function showWorkflowModal() {
+      $('#workflow-modal').addClass('visible');
+    }
+
+    function hideWorkflowModal() {
+      $('#workflow-modal').removeClass('visible');
+      // Save preference if checkbox is checked
+      if ($('#workflow-dont-show').is(':checked')) {
+        localStorage.setItem(WORKFLOW_HIDE_KEY, 'true');
+      }
+    }
+
+    $('#btn-workflow').on('click', showWorkflowModal);
+    $('#workflow-close, #workflow-close-footer').on('click', hideWorkflowModal);
+    $('#workflow-modal').on('click', function (e) {
+      if (e.target === e.currentTarget) hideWorkflowModal();
+    });
+
+    // Show workflow on first visit (unless user opted out)
+    if (!localStorage.getItem(WORKFLOW_HIDE_KEY)) {
+      // Delay slightly so page renders first
+      setTimeout(showWorkflowModal, 500);
+    }
 
     /* ---------- Help modal (tab-aware) ---------- */
 
