@@ -372,6 +372,40 @@
       margin-left: 6px;
     }
 
+    /* File info bar */
+    .file-info-bar {
+      background: #fefce8;
+      border-bottom: 1px solid #fde047;
+      padding: 4px 16px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .file-info-bar .file-label {
+      color: #854d0e;
+      font-weight: 500;
+    }
+
+    .file-info-bar .file-name {
+      color: #1f2937;
+      font-family: monospace;
+      background: #ffffff;
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid #e5e7eb;
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .file-info-bar .file-divider {
+      color: #d1d5db;
+      margin: 0 4px;
+    }
+
     /* Offset controls */
     .offset-group {
       display: inline-flex;
@@ -427,6 +461,15 @@
     </div>
   </div>
 </header>
+
+<!-- Current file display -->
+<div class="file-info-bar">
+  <span class="file-label">CSV/POS:</span>
+  <span class="file-name" id="current-csv-file">—</span>
+  <span class="file-divider">|</span>
+  <span class="file-label">DPV:</span>
+  <span class="file-name" id="current-dpv-file">—</span>
+</div>
 
 <!-- MAIN TOOLBAR -->
 <div class="toolbar">
@@ -508,6 +551,9 @@
       <span class="toolbar-spacer"></span>
       <button class="btn small" id="btn-save-stacklist">Save Stack List</button>
       <button class="btn small" id="btn-load-stacklist">Load Stack List</button>
+      <span style="margin-left:4px;border-left:1px solid #d1d5db;padding-left:8px;"></span>
+      <button class="btn small" id="btn-export-stacks-dpv" title="Export Station table to DPV file">Export DPV</button>
+      <button class="btn small" id="btn-import-stacks-dpv" title="Import Station table from DPV file">Import DPV</button>
     </div>
     <div class="grid-wrapper">
       <table id="table-dpv-stacks" class="data-grid"></table>
@@ -520,6 +566,11 @@
 
   <!-- PANEL LIST TAB -->
   <div id="tab-panel" class="tab-content">
+    <div class="toolbar-secondary" style="margin-bottom:8px;">
+      <span style="font-size:12px;color:#4b5563;margin-right:4px;">Panel data:</span>
+      <button class="btn small" id="btn-export-panel-dpv" title="Export Panel_Array and Panel_Coord to DPV file">Export DPV</button>
+      <button class="btn small" id="btn-import-panel-dpv" title="Import Panel_Array and Panel_Coord from DPV file">Import DPV</button>
+    </div>
     <h4 class="section-title">Panel Array (Panel_Array)</h4>
     <div class="toolbar-secondary row-tools" data-target-table="table-dpv-panel-array">
       <span style="font-size:12px;color:#4b5563;margin-right:4px;">Panel_Array rows:</span>
@@ -580,9 +631,97 @@
     let currentTab = 'csv';
     let dpvModel = { headerLines: [], tables: {} };
 
+    // Remember last filenames for save dialogs
+    let lastCsvFilename = 'placement.csv';
+    let lastDpvFilename = 'job.dpv';
+    let lastStacklistFilename = 'stack_list.csv';
+
+    // Check if File System Access API is supported
+    const hasFileSystemAccess = 'showSaveFilePicker' in window;
+
+    // Save file with dialog (File System Access API) or fallback to download
+    async function saveFileWithDialog(content, suggestedName, types) {
+      if (hasFileSystemAccess) {
+        try {
+          const options = {
+            suggestedName: suggestedName,
+            types: types
+          };
+          const handle = await window.showSaveFilePicker(options);
+          const writable = await handle.createWritable();
+          await writable.write(content);
+          await writable.close();
+          return handle.name;
+        } catch (err) {
+          if (err.name === 'AbortError') {
+            return null; // User cancelled
+          }
+          console.warn('File System Access API failed, falling back to download:', err);
+        }
+      }
+      // Fallback to traditional download
+      downloadText(suggestedName, content);
+      return suggestedName;
+    }
+
+    // Load file with dialog (File System Access API) or fallback to input
+    async function loadFileWithDialog(accept, inputId) {
+      if (hasFileSystemAccess) {
+        try {
+          const types = [];
+          if (accept.includes('.csv') || accept.includes('.pos')) {
+            types.push({
+              description: 'Placement files',
+              accept: { 'text/plain': ['.csv', '.pos'] }
+            });
+          }
+          if (accept.includes('.dpv')) {
+            types.push({
+              description: 'DPV files',
+              accept: { 'text/plain': ['.dpv'] }
+            });
+          }
+          const [handle] = await window.showOpenFilePicker({
+            types: types.length ? types : undefined,
+            multiple: false
+          });
+          const file = await handle.getFile();
+          return { file, name: handle.name };
+        } catch (err) {
+          if (err.name === 'AbortError') {
+            return null; // User cancelled
+          }
+          console.warn('File System Access API failed, falling back to input:', err);
+        }
+      }
+      // Fallback to traditional file input
+      return new Promise(resolve => {
+        const $input = $('#' + inputId);
+        $input.off('change.load').on('change.load', e => {
+          const file = e.target.files[0];
+          if (file) {
+            resolve({ file, name: file.name });
+          } else {
+            resolve(null);
+          }
+          $input.val('');
+        });
+        $input.click();
+      });
+    }
+
     // Set header meta and help badge from constants
     $('#header-meta').text('© ' + COPYRIGHT_YEAR + ' ' + COPYRIGHT_NAME + ' — v' + APP_VERSION);
     $('#help-badge').text('CHMT48VB v' + APP_VERSION);
+
+    // Update displayed filename
+    function updateFileDisplay(type, filename) {
+      if (type === 'csv') {
+        $('#current-csv-file').text(filename || '—').attr('title', filename || '');
+      } else if (type === 'dpv') {
+        $('#current-dpv-file').text(filename || '—').attr('title', filename || '');
+      }
+    }
 
     // Get current offset values
     function getOffsets() {
@@ -1249,7 +1388,7 @@
 
     /* ---------- Stack List save/load ---------- */
 
-    function saveStackList() {
+    async function saveStackList() {
       rebuildDpvModelFromDom();
       const station = dpvModel.tables['Station'];
       if (!station || !station.header.length || !station.rows.length) { alert('No Station data.'); return; }
@@ -1267,7 +1406,11 @@
         lines.push(csvEscape(id)+','+csvEscape(note));
       });
       if (lines.length === 1) { alert('No usable ID/Note pairs.'); return; }
-      downloadText('stack_list.csv', lines.join('\r\n'));
+
+      const savedName = await saveFileWithDialog(lines.join('\r\n'), lastStacklistFilename, [
+        { description: 'CSV files', accept: { 'text/csv': ['.csv'] } }
+      ]);
+      if (savedName) lastStacklistFilename = savedName;
     }
 
     // From Station(ID, Note) and EComponent(Explain=Val, STNo.) derive STNo = ID(Note=Val)
@@ -1638,13 +1781,15 @@
 
     /* ---------- Toolbar buttons ---------- */
 
-    $('#btn-load-csv').on('click', () => { $('#file-input-csv').val('').click(); });
-    $('#file-input-csv').on('change', e => {
-      const file = e.target.files[0]; if (!file) return;
-      const filename = file.name;
+    $('#btn-load-csv').on('click', async () => {
+      const result = await loadFileWithDialog('.csv,.pos', 'file-input-csv');
+      if (!result) return;
+      const { file, name } = result;
+      lastCsvFilename = name;
+      updateFileDisplay('csv', name);
       const r = new FileReader();
       r.onload = evt => {
-        loadCSVIntoTable('table-csv', evt.target.result, filename);
+        loadCSVIntoTable('table-csv', evt.target.result, name);
         currentTab='csv';
         $('.tab-btn').removeClass('active');
         $('.tab-btn[data-tab="csv"]').addClass('active');
@@ -1654,53 +1799,60 @@
       r.readAsText(file);
     });
 
-    $('#btn-save-csv').on('click', () => {
+    $('#btn-save-csv').on('click', async () => {
       const offsets = getOffsets();
+      let content;
+
       if (offsets.x === 0 && offsets.y === 0) {
-        downloadText('placement.csv', tableToCSV('table-csv'));
-        return;
+        content = tableToCSV('table-csv');
+      } else {
+        // Apply offsets to CSV output without modifying the displayed table
+        const $table = $('#table-csv');
+        const colPosX = findCsvColumnIndexByName($table, 'posx');
+        const colPosY = findCsvColumnIndexByName($table, 'posy');
+
+        if (colPosX === -1 || colPosY === -1) {
+          content = tableToCSV('table-csv');
+        } else {
+          // Build CSV with offsets applied
+          const rows = [];
+          const headerCells = [];
+          $table.find('thead th').each(function () {
+            const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
+            headerCells.push(csvEscape(label));
+          });
+          rows.push(headerCells.join(','));
+
+          $table.find('tbody tr').each(function () {
+            const cells = [];
+            $(this).children('td').each(function (idx) {
+              let val = $(this).text().trim();
+              if (idx === colPosX && offsets.x !== 0) {
+                val = String((parseFloat(val) || 0) + offsets.x);
+              } else if (idx === colPosY && offsets.y !== 0) {
+                val = String((parseFloat(val) || 0) + offsets.y);
+              }
+              cells.push(csvEscape(val));
+            });
+            rows.push(cells.join(','));
+          });
+          content = rows.join('\r\n');
+        }
       }
 
-      // Apply offsets to CSV output without modifying the displayed table
-      const $table = $('#table-csv');
-      const colPosX = findCsvColumnIndexByName($table, 'posx');
-      const colPosY = findCsvColumnIndexByName($table, 'posy');
-
-      if (colPosX === -1 || colPosY === -1) {
-        downloadText('placement.csv', tableToCSV('table-csv'));
-        return;
-      }
-
-      // Build CSV with offsets applied
-      const rows = [];
-      const headerCells = [];
-      $table.find('thead th').each(function () {
-        const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
-        headerCells.push(csvEscape(label));
-      });
-      rows.push(headerCells.join(','));
-
-      $table.find('tbody tr').each(function () {
-        const cells = [];
-        $(this).children('td').each(function (idx) {
-          let val = $(this).text().trim();
-          // Apply offset to coordinate columns
-          if (idx === colPosX && offsets.x !== 0) {
-            val = String((parseFloat(val) || 0) + offsets.x);
-          } else if (idx === colPosY && offsets.y !== 0) {
-            val = String((parseFloat(val) || 0) + offsets.y);
-          }
-          cells.push(csvEscape(val));
-        });
-        rows.push(cells.join(','));
-      });
-
-      downloadText('placement.csv', rows.join('\r\n'));
+      const savedName = await saveFileWithDialog(content, lastCsvFilename, [
+        { description: 'CSV files', accept: { 'text/csv': ['.csv'] } },
+        { description: 'POS files', accept: { 'text/plain': ['.pos'] } }
+      ]);
+      if (savedName) lastCsvFilename = savedName;
     });
 
-    $('#btn-load-dpv').on('click', () => { $('#file-input-dpv').val('').click(); });
-    $('#file-input-dpv').on('change', e => {
-      const file = e.target.files[0]; if (!file) return;
+    $('#btn-load-dpv').on('click', async () => {
+      const result = await loadFileWithDialog('.dpv', 'file-input-dpv');
+      if (!result) return;
+      const { file, name } = result;
+      lastDpvFilename = name;
+      updateFileDisplay('dpv', name);
       const r = new FileReader();
       r.onload = evt => {
         parseDpv(evt.target.result);
@@ -1730,7 +1882,7 @@
       alert(msg);
     });
 
-    $('#btn-save-dpv').on('click', () => {
+    $('#btn-save-dpv').on('click', async () => {
       rebuildDpvModelFromDom();
 
       // Apply offsets to a copy of the data for saving (don't modify displayed data)
@@ -1752,13 +1904,11 @@
       }
 
       const text = dpvToText();
-      let filename = 'job.dpv';
-      const fileLine = dpvModel.headerLines.find(l => l.startsWith('FILE,'));
-      if (fileLine) {
-        const parts = fileLine.split(',');
-        if (parts[1]) filename = parts[1].trim();
-      }
-      downloadText(filename, text);
+
+      const savedName = await saveFileWithDialog(text, lastDpvFilename, [
+        { description: 'DPV files', accept: { 'text/plain': ['.dpv'] } }
+      ]);
+      if (savedName) lastDpvFilename = savedName;
 
       // Restore the displayed data (re-read from DOM to undo offset changes to model)
       if (offsets.x !== 0 || offsets.y !== 0) {
@@ -1767,11 +1917,141 @@
     });
 
     $('#btn-save-stacklist').on('click', saveStackList);
-    $('#btn-load-stacklist').on('click', () => { $('#file-input-stacklist').val('').click(); });
-    $('#file-input-stacklist').on('change', e => {
-      const file = e.target.files[0]; if (!file) return;
+
+    $('#btn-load-stacklist').on('click', async () => {
+      const result = await loadFileWithDialog('.csv', 'file-input-stacklist');
+      if (!result) return;
+      const { file, name } = result;
+      lastStacklistFilename = name;
       const r = new FileReader();
       r.onload = evt => applyStackList(evt.target.result);
+      r.readAsText(file);
+    });
+
+    // Export Material Stacks (Station) to DPV file
+    $('#btn-export-stacks-dpv').on('click', async () => {
+      rebuildDpvModelFromDom();
+      const station = dpvModel.tables['Station'];
+      if (!station || !station.header.length || !station.rows.length) {
+        alert('No Station data to export.');
+        return;
+      }
+
+      const lines = ['separated', 'FILE,station.dpv', 'PANELYPE,1', ''];
+      lines.push(station.header.map(csvEscape).join(','));
+      station.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
+
+      const savedName = await saveFileWithDialog(lines.join('\r\n'), 'station.dpv', [
+        { description: 'DPV files', accept: { 'text/plain': ['.dpv'] } }
+      ]);
+    });
+
+    // Import Material Stacks (Station) from DPV file
+    $('#btn-import-stacks-dpv').on('click', async () => {
+      const result = await loadFileWithDialog('.dpv', 'file-input-dpv');
+      if (!result) return;
+      const { file, name } = result;
+      const r = new FileReader();
+      r.onload = evt => {
+        const tempModel = { headerLines: [], tables: {} };
+        const lines = evt.target.result.replace(/\r/g, '').split('\n').filter(l => l.trim().length > 0);
+        let pendingHeader = null;
+        lines.forEach(line => {
+          const t = line.trim();
+          if (!t || t.startsWith('separated') || t.startsWith('FILE,') || t.startsWith('PCBFILE,') ||
+              t.startsWith('DATE,') || t.startsWith('TIME,') || t.startsWith('PANELYPE,')) return;
+          if (t.startsWith('Table,')) { pendingHeader = parseCSV(t)[0]; return; }
+          const arr = parseCSV(t)[0];
+          if (!arr.length) return;
+          const tableName = arr[0];
+          if (!tableName || tableName === 'Table') return;
+          if (!tempModel.tables[tableName]) tempModel.tables[tableName] = { header: [], rows: [] };
+          if (pendingHeader) { tempModel.tables[tableName].header = pendingHeader; pendingHeader = null; }
+          tempModel.tables[tableName].rows.push(arr);
+        });
+
+        if (tempModel.tables['Station'] && tempModel.tables['Station'].rows.length) {
+          dpvModel.tables['Station'] = tempModel.tables['Station'];
+          renderDpvTable('table-dpv-stacks', dpvModel.tables['Station'], false);
+          alert('Station data imported from ' + name);
+        } else {
+          alert('No Station data found in ' + name);
+        }
+      };
+      r.readAsText(file);
+    });
+
+    // Export Panel Lists (Panel_Array + Panel_Coord) to DPV file
+    $('#btn-export-panel-dpv').on('click', async () => {
+      rebuildDpvModelFromDom();
+      const pArray = dpvModel.tables['Panel_Array'];
+      const pCoord = dpvModel.tables['Panel_Coord'];
+      if ((!pArray || !pArray.rows.length) && (!pCoord || !pCoord.rows.length)) {
+        alert('No Panel data to export.');
+        return;
+      }
+
+      const lines = ['separated', 'FILE,panel.dpv', 'PANELYPE,1'];
+
+      if (pArray && pArray.header.length && pArray.rows.length) {
+        lines.push('');
+        lines.push(pArray.header.map(csvEscape).join(','));
+        pArray.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
+      }
+
+      if (pCoord && pCoord.header.length && pCoord.rows.length) {
+        lines.push('');
+        lines.push(pCoord.header.map(csvEscape).join(','));
+        pCoord.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
+      }
+
+      const savedName = await saveFileWithDialog(lines.join('\r\n'), 'panel.dpv', [
+        { description: 'DPV files', accept: { 'text/plain': ['.dpv'] } }
+      ]);
+    });
+
+    // Import Panel Lists (Panel_Array + Panel_Coord) from DPV file
+    $('#btn-import-panel-dpv').on('click', async () => {
+      const result = await loadFileWithDialog('.dpv', 'file-input-dpv');
+      if (!result) return;
+      const { file, name } = result;
+      const r = new FileReader();
+      r.onload = evt => {
+        const tempModel = { headerLines: [], tables: {} };
+        const lines = evt.target.result.replace(/\r/g, '').split('\n').filter(l => l.trim().length > 0);
+        let pendingHeader = null;
+        lines.forEach(line => {
+          const t = line.trim();
+          if (!t || t.startsWith('separated') || t.startsWith('FILE,') || t.startsWith('PCBFILE,') ||
+              t.startsWith('DATE,') || t.startsWith('TIME,') || t.startsWith('PANELYPE,')) return;
+          if (t.startsWith('Table,')) { pendingHeader = parseCSV(t)[0]; return; }
+          const arr = parseCSV(t)[0];
+          if (!arr.length) return;
+          const tableName = arr[0];
+          if (!tableName || tableName === 'Table') return;
+          if (!tempModel.tables[tableName]) tempModel.tables[tableName] = { header: [], rows: [] };
+          if (pendingHeader) { tempModel.tables[tableName].header = pendingHeader; pendingHeader = null; }
+          tempModel.tables[tableName].rows.push(arr);
+        });
+
+        let imported = [];
+        if (tempModel.tables['Panel_Array'] && tempModel.tables['Panel_Array'].rows.length) {
+          dpvModel.tables['Panel_Array'] = tempModel.tables['Panel_Array'];
+          renderDpvTable('table-dpv-panel-array', dpvModel.tables['Panel_Array'], false);
+          imported.push('Panel_Array');
+        }
+        if (tempModel.tables['Panel_Coord'] && tempModel.tables['Panel_Coord'].rows.length) {
+          dpvModel.tables['Panel_Coord'] = tempModel.tables['Panel_Coord'];
+          renderDpvTable('table-dpv-panel-coord', dpvModel.tables['Panel_Coord'], false);
+          imported.push('Panel_Coord');
+        }
+
+        if (imported.length) {
+          alert(imported.join(' and ') + ' imported from ' + name);
+        } else {
+          alert('No Panel data found in ' + name);
+        }
+      };
       r.readAsText(file);
     });
 
