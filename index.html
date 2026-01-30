@@ -2173,7 +2173,9 @@
         $('.tab-btn[data-tab="components"]').addClass('active');
         $('.tab-content').removeClass('active');
         $('#tab-components').addClass('active');
-        if (confirm('DPV loaded. Export a Stack List (Station ID/Note CSV) now?')) saveStackList();
+        if (confirm('DPV loaded. Would you like to Export Material Stacks / Panel List?')) {
+          exportMaterialStacksAndPanelLists();
+        }
       };
       r.readAsText(file);
     });
@@ -2383,6 +2385,57 @@
       r.onload = evt => applyStackList(evt.target.result);
       r.readAsText(file);
     });
+
+    // Export both Material Stacks and Panel Lists as separate DPV files
+    async function exportMaterialStacksAndPanelLists() {
+      rebuildDpvModelFromDom();
+
+      const station = dpvModel.tables['Station'];
+      const pArray = dpvModel.tables['Panel_Array'];
+      const pCoord = dpvModel.tables['Panel_Coord'];
+
+      let exported = [];
+
+      // Export Station (Material Stacks) if present
+      if (station && station.header.length && station.rows.length) {
+        const lines = ['separated', 'FILE,station.dpv', 'PANELYPE,1', ''];
+        lines.push(station.header.map(csvEscape).join(','));
+        station.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
+
+        await saveFileWithDialog(lines.join('\r\n'), 'station.dpv', [
+          { description: 'DPV files', accept: { 'text/plain': ['.dpv'] } }
+        ]);
+        exported.push('Material Stacks (Station)');
+      }
+
+      // Export Panel Lists (Panel_Array + Panel_Coord) if present
+      if ((pArray && pArray.rows.length) || (pCoord && pCoord.rows.length)) {
+        const lines = ['separated', 'FILE,panel.dpv', 'PANELYPE,1'];
+
+        if (pArray && pArray.header.length && pArray.rows.length) {
+          lines.push('');
+          lines.push(pArray.header.map(csvEscape).join(','));
+          pArray.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
+        }
+
+        if (pCoord && pCoord.header.length && pCoord.rows.length) {
+          lines.push('');
+          lines.push(pCoord.header.map(csvEscape).join(','));
+          pCoord.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
+        }
+
+        await saveFileWithDialog(lines.join('\r\n'), 'panel.dpv', [
+          { description: 'DPV files', accept: { 'text/plain': ['.dpv'] } }
+        ]);
+        exported.push('Panel List (Panel_Array/Panel_Coord)');
+      }
+
+      if (exported.length === 0) {
+        alert('No Material Stacks or Panel List data to export.');
+      } else {
+        alert('Exported: ' + exported.join(', '));
+      }
+    }
 
     // Export Material Stacks (Station) to DPV file
     $('#btn-export-stacks-dpv').on('click', async () => {
