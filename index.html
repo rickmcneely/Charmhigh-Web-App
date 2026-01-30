@@ -477,7 +477,6 @@
   <button id="btn-save-csv" class="btn primary">Save CSV</button>
 
   <button id="btn-load-dpv" class="btn">Load DPV</button>
-  <button id="btn-export-dpv" class="btn">Export DPV</button>
   <button id="btn-save-dpv" class="btn">Save DPV</button>
 
   <div class="offset-divider"></div>
@@ -554,6 +553,8 @@
       <span style="margin-left:4px;border-left:1px solid #d1d5db;padding-left:8px;"></span>
       <button class="btn small" id="btn-export-stacks-dpv" title="Export Station table to DPV file">Export DPV</button>
       <button class="btn small" id="btn-import-stacks-dpv" title="Import Station table from DPV file">Import DPV</button>
+      <span style="margin-left:4px;border-left:1px solid #d1d5db;padding-left:8px;"></span>
+      <button class="btn small" id="btn-move-to-panels" title="Move selected rows to Panel_Coord table">Move to Panels</button>
     </div>
     <div class="grid-wrapper">
       <table id="table-dpv-stacks" class="data-grid"></table>
@@ -588,6 +589,8 @@
       <button class="btn small btn-add-row">Add Row</button>
       <button class="btn small danger btn-delete-rows">Delete Selected Rows</button>
       <button class="btn small btn-clear-rows">Clear Rows (Keep Header)</button>
+      <span style="margin-left:4px;border-left:1px solid #d1d5db;padding-left:8px;"></span>
+      <button class="btn small" id="btn-move-to-stacks" title="Move selected rows to Station table">Move to Stacks</button>
     </div>
     <div class="grid-wrapper">
       <table id="table-dpv-panel-coord" class="data-grid"></table>
@@ -845,6 +848,42 @@
       });
 
       $table.find('tbody').append($tr);
+      sortStationTableById();
+    }
+
+    // Sort Material Stacks (Station) table by ID column
+    function sortStationTableById() {
+      const $table = $('#table-dpv-stacks');
+      const $tbody = $table.find('tbody');
+      if (!$tbody.length) return;
+
+      // Find ID column index
+      const headers = [];
+      $table.find('thead th').each(function () {
+        const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
+        headers.push(label.toLowerCase());
+      });
+      const idCol = headers.indexOf('id');
+      if (idCol === -1) return;
+
+      // Get all rows and sort by ID
+      const $rows = $tbody.find('tr').toArray();
+      $rows.sort((a, b) => {
+        const aId = parseInt($(a).children().eq(idCol).text().trim(), 10) || 0;
+        const bId = parseInt($(b).children().eq(idCol).text().trim(), 10) || 0;
+        return aId - bId;
+      });
+
+      // Re-append rows in sorted order
+      $rows.forEach(row => $tbody.append(row));
+
+      // Update No. column to reflect new order
+      const noCol = headers.indexOf('no.');
+      if (noCol !== -1) {
+        $tbody.find('tr').each(function (idx) {
+          $(this).children().eq(noCol).text(String(idx));
+        });
+      }
     }
 
     function clearRows(tableId) {
@@ -1322,16 +1361,55 @@
       // Get current offsets
       const offsets = getOffsets();
 
-      const eHeader = ['Table','No.','ID','PHead','STNo.','DeltX','DeltY','Angle','Height','Skip','Speed','Explain','Note','Delay'];
-      const ecomp = ensureDpvTable('EComponent');
-      ecomp.header = eHeader; ecomp.rows = [];
-
+      // Collect CSV rows
       const rows = [];
       $csvTable.find('tbody tr').each(function () {
         const r = [];
         $(this).children('td').each(function () { r.push($(this).text().trim()); });
         if (r.join('').length) rows.push(r);
       });
+
+      // First pass: collect unique Val values for Station creation
+      const uniqueVals = [];
+      const valToStationId = {};
+      rows.forEach(row => {
+        const val = (colVal >= 0 && colVal < row.length) ? row[colVal] : '';
+        if (val && !valToStationId.hasOwnProperty(val)) {
+          const stationId = uniqueVals.length + 1;
+          valToStationId[val] = stationId;
+          uniqueVals.push(val);
+        }
+      });
+
+      // Create Station table with auto-generated entries
+      const sHeader = ['Table','No.','ID','DeltX','DeltY','FeedRates','Note','Height','Speed','Status','nPixSizeX','nPixSizeY','HeightTake','DelayTake','nPullStripSpeed','nThreshold','nVisualRadio'];
+      const station = ensureDpvTable('Station');
+      station.header = sHeader;
+      station.rows = uniqueVals.map((val, idx) => [
+        'Station',
+        String(idx),           // No.
+        String(idx + 1),       // ID (1-based)
+        '0',                   // DeltX
+        '0',                   // DeltY
+        '4',                   // FeedRates
+        val,                   // Note (component value)
+        '0.5',                 // Height
+        '0',                   // Speed
+        '4',                   // Status
+        '0',                   // nPixSizeX
+        '0',                   // nPixSizeY
+        '0',                   // HeightTake
+        '10',                  // DelayTake
+        '85',                  // nPullStripSpeed
+        '110',                 // nThreshold
+        '200'                  // nVisualRadio
+      ]);
+
+      // Create EComponent table with correct STNo. references
+      const eHeader = ['Table','No.','ID','PHead','STNo.','DeltX','DeltY','Angle','Height','Skip','Speed','Explain','Note','Delay'];
+      const ecomp = ensureDpvTable('EComponent');
+      ecomp.header = eHeader;
+      ecomp.rows = [];
 
       rows.forEach((row, idx) => {
         const gv = (ci) => (ci<0||ci>=row.length)?'':row[ci];
@@ -1345,6 +1423,9 @@
         const rotv = parseFloat(gv(colRot));
         const angle = isNaN(rotv) ? 0 : rotv;
 
+        // Look up STNo. from Station based on Val
+        const stNo = valToStationId[val] || 1;
+
         let note = '';
         if (ref && pkg) note = ref + ' - ' + pkg;
         else if (ref) note = ref;
@@ -1355,7 +1436,7 @@
           String(idx),        // No.
           String(idx+1),      // ID
           '1',                // PHead
-          '1',                // STNo (default; can be remapped by Station)
+          String(stNo),       // STNo. (linked to Station ID)
           String(posx),       // DeltX (with offset applied)
           String(posy),       // DeltY (with offset applied)
           String(angle),      // Angle
@@ -1368,13 +1449,6 @@
         ]);
       });
 
-      const sHeader = ['Table','No.','ID','DeltX','DeltY','FeedRates','Note','Height','Speed','Status','nPixSizeX','nPixSizeY','HeightTake','DelayTake','nPullStripSpeed','nThreshold','nVisualRadio'];
-      const station = ensureDpvTable('Station');
-      station.header = sHeader;
-      station.rows = [
-        ['Station','0','1','0','0','4','Default','0.5','0','4','0','0','0','10','85','110','200']
-      ];
-
       const pArray = ensureDpvTable('Panel_Array');
       pArray.header = ['Table','No.','ID','IntervalX','IntervalY','NumX','NumY'];
       pArray.rows = [['Panel_Array','0','1','0','0','1','1']];
@@ -1384,6 +1458,7 @@
       pCoord.rows = [['Panel_Coord','0','1','0','0']];
 
       renderDpvTabsFromModel();
+      sortStationTableById();
     }
 
     /* ---------- Stack List save/load ---------- */
@@ -1501,6 +1576,7 @@
 
       rederiveStNoFromStationByNote();
       renderDpvTabsFromModel();
+      sortStationTableById();
       currentTab = 'stacks';
       $('.tab-btn').removeClass('active');
       $('.tab-btn[data-tab="stacks"]').addClass('active');
@@ -1534,10 +1610,19 @@
       const colIndex = $cell.index();
       let idCol = -1;
       $table.find('thead th').each(function (i) {
-        if ($(this).text().trim().toLowerCase() === 'id') { idCol = i; return false; }
+        const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
+        if (label.toLowerCase() === 'id') { idCol = i; return false; }
       });
       if (colIndex === idCol) {
         $cell.data('old-id', $cell.text().trim());
+      }
+    });
+
+    // Sort stacks table when Enter is pressed in a cell
+    $(document).on('keydown', '#table-dpv-stacks tbody td', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        $(this).blur();
       }
     });
 
@@ -1547,43 +1632,49 @@
       const colIndex = $cell.index();
       let idCol = -1;
       $table.find('thead th').each(function (i) {
-        if ($(this).text().trim().toLowerCase() === 'id') { idCol = i; return false; }
+        const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
+        if (label.toLowerCase() === 'id') { idCol = i; return false; }
       });
-      if (idCol === -1 || colIndex !== idCol) return;
 
-      const oldId = $cell.data('old-id') || $cell.text().trim();
-      let newIdRaw = $cell.text().trim();
-      let newIdNum = parseInt(newIdRaw,10);
-      if (isNaN(newIdNum) || newIdNum <= 0) {
-        const used = new Set();
-        $table.find('tbody tr').each(function () {
-          const v = $(this).children().eq(idCol).text().trim();
-          if (v) used.add(v);
-        });
-        let candidate = 1;
-        while (used.has(String(candidate))) candidate++;
-        newIdNum = candidate;
-      }
-      const newId = String(newIdNum);
-      $cell.text(newId);
-
-      const usedIds = new Set([newId]);
-      $table.find('tbody tr').each(function () {
-        const $row = $(this);
-        const $c = $row.children().eq(idCol);
-        if ($c[0] === $cell[0]) return;
-        let v = $c.text().trim();
-        if (!v) return;
-        if (usedIds.has(v)) {
-          let cand = 1;
-          while (usedIds.has(String(cand))) cand++;
-          v = String(cand);
-          $c.text(v);
+      // Handle ID column edits: validate uniqueness and update STNo references
+      if (idCol !== -1 && colIndex === idCol) {
+        const oldId = $cell.data('old-id') || $cell.text().trim();
+        let newIdRaw = $cell.text().trim();
+        let newIdNum = parseInt(newIdRaw,10);
+        if (isNaN(newIdNum) || newIdNum <= 0) {
+          const used = new Set();
+          $table.find('tbody tr').each(function () {
+            const v = $(this).children().eq(idCol).text().trim();
+            if (v) used.add(v);
+          });
+          let candidate = 1;
+          while (used.has(String(candidate))) candidate++;
+          newIdNum = candidate;
         }
-        usedIds.add(v);
-      });
+        const newId = String(newIdNum);
+        $cell.text(newId);
 
-      updateComponentsStNo(oldId, newId);
+        const usedIds = new Set([newId]);
+        $table.find('tbody tr').each(function () {
+          const $row = $(this);
+          const $c = $row.children().eq(idCol);
+          if ($c[0] === $cell[0]) return;
+          let v = $c.text().trim();
+          if (!v) return;
+          if (usedIds.has(v)) {
+            let cand = 1;
+            while (usedIds.has(String(cand))) cand++;
+            v = String(cand);
+            $c.text(v);
+          }
+          usedIds.add(v);
+        });
+
+        updateComponentsStNo(oldId, newId);
+      }
+
+      // Always sort by ID after any edit
+      sortStationTableById();
     });
 
     /* ---------- INITIAL TABLES ---------- */
@@ -1786,10 +1877,16 @@
       if (!result) return;
       const { file, name } = result;
       lastCsvFilename = name;
+      // Set DPV filename based on CSV filename
+      const baseName = name.replace(/\.(csv|pos)$/i, '');
+      lastDpvFilename = baseName + '.dpv';
       updateFileDisplay('csv', name);
+      updateFileDisplay('dpv', lastDpvFilename + ' (generated)');
       const r = new FileReader();
       r.onload = evt => {
         loadCSVIntoTable('table-csv', evt.target.result, name);
+        // Auto-convert to DPV
+        generateDpvFromCsv();
         currentTab='csv';
         $('.tab-btn').removeClass('active');
         $('.tab-btn[data-tab="csv"]').addClass('active');
@@ -1857,6 +1954,7 @@
       r.onload = evt => {
         parseDpv(evt.target.result);
         renderDpvTabsFromModel();
+        sortStationTableById();
         currentTab='components';
         $('.tab-btn').removeClass('active');
         $('.tab-btn[data-tab="components"]').addClass('active');
@@ -1865,21 +1963,6 @@
         if (confirm('DPV loaded. Export a Stack List (Station ID/Note CSV) now?')) saveStackList();
       };
       r.readAsText(file);
-    });
-
-    $('#btn-export-dpv').on('click', () => {
-      const offsets = getOffsets();
-      generateDpvFromCsv();
-      currentTab='components';
-      $('.tab-btn').removeClass('active');
-      $('.tab-btn[data-tab="components"]').addClass('active');
-      $('.tab-content').removeClass('active');
-      $('#tab-components').addClass('active');
-      let msg = 'DPV generated from KiCad CSV and loaded into DPV tabs.';
-      if (offsets.x !== 0 || offsets.y !== 0) {
-        msg += '\n\nOffsets applied:\n  X: ' + (offsets.x >= 0 ? '+' : '') + offsets.x + ' mm\n  Y: ' + (offsets.y >= 0 ? '+' : '') + offsets.y + ' mm';
-      }
-      alert(msg);
     });
 
     $('#btn-save-dpv').on('click', async () => {
@@ -1973,6 +2056,7 @@
         if (tempModel.tables['Station'] && tempModel.tables['Station'].rows.length) {
           dpvModel.tables['Station'] = tempModel.tables['Station'];
           renderDpvTable('table-dpv-stacks', dpvModel.tables['Station'], false);
+          sortStationTableById();
           alert('Station data imported from ' + name);
         } else {
           alert('No Station data found in ' + name);
@@ -2053,6 +2137,184 @@
         }
       };
       r.readAsText(file);
+    });
+
+    // Move selected rows from Material Stacks (Station) to Panel List (Panel_Coord)
+    $('#btn-move-to-panels').on('click', () => {
+      const $sourceTable = $('#table-dpv-stacks');
+      const $targetTable = $('#table-dpv-panel-coord');
+      const $selectedRows = $sourceTable.find('tbody tr.selected');
+
+      if (!$selectedRows.length) {
+        alert('No rows selected. Select rows in Material Stacks to move.');
+        return;
+      }
+
+      // Get source headers
+      const sourceHeaders = [];
+      $sourceTable.find('thead th').each(function () {
+        const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
+        sourceHeaders.push(label.toLowerCase());
+      });
+
+      // Ensure Panel_Coord table has headers
+      let $targetThead = $targetTable.find('thead');
+      if (!$targetThead.length || !$targetThead.find('th').length) {
+        const pCoordHeaders = ['Table', 'No.', 'ID', 'DeltX', 'DeltY'];
+        $targetThead = $('<thead><tr></tr></thead>');
+        pCoordHeaders.forEach((h, idx) => $targetThead.find('tr').append(createHeaderCell(h, idx, false)));
+        $targetTable.prepend($targetThead);
+        if (!$targetTable.find('tbody').length) {
+          $targetTable.append($('<tbody></tbody>'));
+        }
+      }
+
+      // Get target headers
+      const targetHeaders = [];
+      $targetTable.find('thead th').each(function () {
+        const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
+        targetHeaders.push(label.toLowerCase());
+      });
+
+      // Get existing row count for No. column
+      let targetRowNo = $targetTable.find('tbody tr').length;
+
+      // Move each selected row
+      $selectedRows.each(function () {
+        const $sourceRow = $(this);
+        const sourceData = {};
+        $sourceRow.children('td').each(function (i) {
+          if (i < sourceHeaders.length) {
+            sourceData[sourceHeaders[i]] = $(this).text().trim();
+          }
+        });
+
+        // Create new row for Panel_Coord
+        const $newRow = $('<tr></tr>');
+        targetHeaders.forEach(h => {
+          let val = '';
+          const hLower = h.toLowerCase();
+          if (hLower === 'table') {
+            val = 'Panel_Coord';
+          } else if (hLower === 'no.') {
+            val = String(targetRowNo++);
+          } else if (sourceData[hLower] !== undefined) {
+            val = sourceData[hLower];
+          }
+          $('<td contenteditable="true"></td>').text(val).appendTo($newRow);
+        });
+
+        $targetTable.find('tbody').append($newRow);
+        $sourceRow.remove();
+      });
+    });
+
+    // Move selected rows from Panel List (Panel_Coord) to Material Stacks (Station)
+    $('#btn-move-to-stacks').on('click', () => {
+      const $sourceTable = $('#table-dpv-panel-coord');
+      const $targetTable = $('#table-dpv-stacks');
+      const $selectedRows = $sourceTable.find('tbody tr.selected');
+
+      if (!$selectedRows.length) {
+        alert('No rows selected. Select rows in Panel_Coord to move.');
+        return;
+      }
+
+      // Get source headers
+      const sourceHeaders = [];
+      $sourceTable.find('thead th').each(function () {
+        const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
+        sourceHeaders.push(label.toLowerCase());
+      });
+
+      // Ensure Station table has headers
+      let $targetThead = $targetTable.find('thead');
+      if (!$targetThead.length || !$targetThead.find('th').length) {
+        const stationHeaders = ['Table', 'No.', 'ID', 'DeltX', 'DeltY', 'FeedRates', 'Note', 'Height', 'Speed', 'Status', 'nPixSizeX', 'nPixSizeY', 'HeightTake', 'DelayTake', 'nPullStripSpeed', 'nThreshold', 'nVisualRadio'];
+        $targetThead = $('<thead><tr></tr></thead>');
+        stationHeaders.forEach((h, idx) => $targetThead.find('tr').append(createHeaderCell(h, idx, false)));
+        $targetTable.prepend($targetThead);
+        if (!$targetTable.find('tbody').length) {
+          $targetTable.append($('<tbody></tbody>'));
+        }
+      }
+
+      // Get target headers
+      const targetHeaders = [];
+      $targetTable.find('thead th').each(function () {
+        const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
+        targetHeaders.push(label.toLowerCase());
+      });
+
+      // Find existing IDs in target to determine unique ID
+      const idCol = targetHeaders.indexOf('id');
+      const usedIds = new Set();
+      $targetTable.find('tbody tr').each(function () {
+        if (idCol !== -1) {
+          const idVal = $(this).children().eq(idCol).text().trim();
+          if (idVal) usedIds.add(parseInt(idVal, 10) || 0);
+        }
+      });
+
+      // Get existing row count for No. column
+      let targetRowNo = $targetTable.find('tbody tr').length;
+
+      // Default values for Station columns not in Panel_Coord
+      const stationDefaults = {
+        'table': 'Station',
+        'feedrates': '4',
+        'note': '',
+        'height': '0.5',
+        'speed': '0',
+        'status': '4',
+        'npixsizex': '0',
+        'npixsizey': '0',
+        'heighttake': '0',
+        'delaytake': '10',
+        'npullstripspeed': '85',
+        'nthreshold': '110',
+        'nvisualradio': '200'
+      };
+
+      // Move each selected row
+      $selectedRows.each(function () {
+        const $sourceRow = $(this);
+        const sourceData = {};
+        $sourceRow.children('td').each(function (i) {
+          if (i < sourceHeaders.length) {
+            sourceData[sourceHeaders[i]] = $(this).text().trim();
+          }
+        });
+
+        // Determine unique ID for this row
+        let rowId = parseInt(sourceData['id'], 10) || 1;
+        while (usedIds.has(rowId)) rowId++;
+        usedIds.add(rowId);
+
+        // Create new row for Station
+        const $newRow = $('<tr></tr>');
+        targetHeaders.forEach(h => {
+          let val = '';
+          const hLower = h.toLowerCase();
+          if (hLower === 'table') {
+            val = 'Station';
+          } else if (hLower === 'no.') {
+            val = String(targetRowNo++);
+          } else if (hLower === 'id') {
+            val = String(rowId);
+          } else if (sourceData[hLower] !== undefined) {
+            val = sourceData[hLower];
+          } else if (stationDefaults[hLower] !== undefined) {
+            val = stationDefaults[hLower];
+          }
+          $('<td contenteditable="true"></td>').text(val).appendTo($newRow);
+        });
+
+        $targetTable.find('tbody').append($newRow);
+        $sourceRow.remove();
+      });
+
+      sortStationTableById();
     });
 
     $('#btn-toggle-skip').on('click', toggleSkipSelected);
