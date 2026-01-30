@@ -556,6 +556,10 @@
       <button class="btn small" id="btn-import-stacks-dpv" title="Import Station table from DPV file">Import DPV</button>
       <span style="margin-left:4px;border-left:1px solid #d1d5db;padding-left:8px;"></span>
       <button class="btn small" id="btn-move-to-panels" title="Move selected rows to Panel_Coord table">Move to Panels</button>
+      <span style="margin-left:4px;border-left:1px solid #d1d5db;padding-left:8px;"></span>
+      <button class="btn small" id="btn-save-to-library" title="Save selected stacks to Master Feeder Library">Save to Library</button>
+      <button class="btn small" id="btn-apply-library" title="Auto-match and apply library settings to current stacks">Apply Library</button>
+      <button class="btn small" id="btn-manage-library" title="View and manage Master Feeder Library entries">Manage Library</button>
     </div>
     <div class="grid-wrapper">
       <table id="table-dpv-stacks" class="data-grid"></table>
@@ -620,14 +624,41 @@
   </div>
 </div>
 
+<!-- Master Feeder Library Modal -->
+<div id="library-modal" class="modal-backdrop">
+  <div class="modal-dialog" style="max-width:900px;">
+    <div class="modal-header">
+      <h2>Master Feeder Library</h2>
+      <button id="library-close" class="btn small">Close</button>
+    </div>
+    <div class="modal-body" style="max-height:60vh;overflow-y:auto;">
+      <p style="margin-bottom:12px;color:#6b7280;">Library entries are matched by <strong>Note</strong> (component value/footprint). When applied, settings are copied to matching Material Stacks.</p>
+      <div id="library-entries" style="font-family:monospace;font-size:13px;">
+        <!-- Filled dynamically -->
+      </div>
+      <div id="library-empty" style="color:#9ca3af;padding:20px;text-align:center;">
+        No library entries yet. Select rows in Material Stacks and click "Save to Library" to add them.
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:8px;">
+      <button id="library-export" class="btn small">Export Library</button>
+      <button id="library-import" class="btn small">Import Library</button>
+      <button id="library-clear" class="btn small danger">Clear All</button>
+      <span style="flex:1;"></span>
+      <button id="library-close-footer" class="btn small">Done</button>
+    </div>
+  </div>
+</div>
+
 <!-- Hidden file inputs -->
 <input id="file-input-csv" type="file" accept=".csv,.pos,text/csv,text/plain" style="display:none">
 <input id="file-input-dpv" type="file" accept=".dpv,text/plain" style="display:none">
 <input id="file-input-stacklist" type="file" accept=".csv,text/csv,text/plain" style="display:none">
+<input id="file-input-library" type="file" accept=".json,application/json" style="display:none">
 
 <script>
   // Global app metadata
-  const APP_VERSION = '0.04';
+  const APP_VERSION = '0.05';
   const COPYRIGHT_YEAR = '2025';
   const COPYRIGHT_NAME = 'Rick McNeely';
 
@@ -639,6 +670,9 @@
     let lastCsvFilename = 'placement.csv';
     let lastDpvFilename = 'job.dpv';
     let lastStacklistFilename = 'stack_list.csv';
+
+    // Master Feeder Library - localStorage key
+    const LIBRARY_STORAGE_KEY = 'chmt48vb_feeder_library';
 
     // Check if File System Access API is supported
     const hasFileSystemAccess = 'showSaveFilePicker' in window;
@@ -683,6 +717,12 @@
             types.push({
               description: 'DPV files',
               accept: { 'text/plain': ['.dpv'] }
+            });
+          }
+          if (accept.includes('.json')) {
+            types.push({
+              description: 'JSON files',
+              accept: { 'application/json': ['.json'] }
             });
           }
           const [handle] = await window.showOpenFilePicker({
@@ -820,12 +860,13 @@
       const rowNo = $table.find('tbody tr').length;
 
       // Default values for Station table:
-      // Table, No., ID, DeltX, DeltY, FeedRates, Note, Height, Speed, Status,
+      // Table, No., ID, PHead, DeltX, DeltY, FeedRates, Note, Height, Speed, Status,
       // nPixSizeX, nPixSizeY, HeightTake, DelayTake, nPullStripSpeed, nThreshold, nVisualRadio
       const defaults = {
         'table': 'Station',
         'no.': String(rowNo),
         'id': String(nextId),
+        'phead': '1',
         'deltx': '0',
         'delty': '0',
         'feedrates': '4',
@@ -1590,14 +1631,15 @@
         }
       });
 
-      // Create Station table with auto-generated entries
-      const sHeader = ['Table','No.','ID','DeltX','DeltY','FeedRates','Note','Height','Speed','Status','nPixSizeX','nPixSizeY','HeightTake','DelayTake','nPullStripSpeed','nThreshold','nVisualRadio'];
+      // Create Station table with auto-generated entries (includes custom PHead column after ID)
+      const sHeader = ['Table','No.','ID','PHead','DeltX','DeltY','FeedRates','Note','Height','Speed','Status','nPixSizeX','nPixSizeY','HeightTake','DelayTake','nPullStripSpeed','nThreshold','nVisualRadio'];
       const station = ensureDpvTable('Station');
       station.header = sHeader;
       station.rows = uniqueVals.map((val, idx) => [
         'Station',
         String(idx),           // No.
         String(idx + 1),       // ID (1-based)
+        '1',                   // PHead (default to head 1)
         '0',                   // DeltX
         '0',                   // DeltY
         '4',                   // FeedRates
@@ -1666,6 +1708,12 @@
       pCoord.header = ['Table','No.','ID','DeltX','DeltY'];
       pCoord.rows = [['Panel_Coord','0','1','0','0']];
 
+      // Auto-apply Master Feeder Library settings to matching Station entries
+      const libraryMatches = autoApplyLibraryToModel();
+      if (libraryMatches > 0) {
+        console.log(`Auto-applied library settings to ${libraryMatches} station(s).`);
+      }
+
       renderDpvTabsFromModel();
       sortStationTableById();
     }
@@ -1676,23 +1724,14 @@
       rebuildDpvModelFromDom();
       const station = dpvModel.tables['Station'];
       if (!station || !station.header.length || !station.rows.length) { alert('No Station data.'); return; }
-      const idIdx = station.header.indexOf('ID');
-      const noteIdx = station.header.indexOf('Note');
-      if (idIdx === -1 || noteIdx === -1) { alert('Station missing ID/Note columns.'); return; }
 
-      const lines = ['ID,Note'];
-      const seen = new Set();
-      station.rows.forEach(row => {
-        const id = (row[idIdx] || '').trim();
-        if (!id || seen.has(id)) return;
-        seen.add(id);
-        const note = (row[noteIdx] || '').trim();
-        lines.push(csvEscape(id)+','+csvEscape(note));
-      });
-      if (lines.length === 1) { alert('No usable ID/Note pairs.'); return; }
+      // Save complete Station table as DPVx file with all parameters (including custom PHead)
+      const lines = ['separated', 'FILE,MaterialStack.dpvx', 'PANELYPE,1', ''];
+      lines.push(station.header.map(csvEscape).join(','));
+      station.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
 
-      const savedName = await saveFileWithDialog(lines.join('\r\n'), lastStacklistFilename, [
-        { description: 'CSV files', accept: { 'text/csv': ['.csv'] } }
+      const savedName = await saveFileWithDialog(lines.join('\r\n'), lastStacklistFilename.replace(/\.(csv|dpv)$/i, '.dpvx') || 'MaterialStack.dpvx', [
+        { description: 'DPVx files (Extended DPV)', accept: { 'text/plain': ['.dpvx'] } }
       ]);
       if (savedName) lastStacklistFilename = savedName;
     }
@@ -1728,10 +1767,51 @@
       });
     }
 
-    function applyStackList(csvText) {
+    function applyStackList(text) {
       rebuildDpvModelFromDom();
-      const rows = parseCSV(csvText);
-      if (!rows.length) { alert('Stack list CSV is empty.'); return; }
+
+      // Check if this is a DPV file with Station table (complete format)
+      if (text.includes('separated') && text.toLowerCase().includes('station')) {
+        // Parse as DPV file
+        const tempModel = { headerLines: [], tables: {} };
+        const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim().length > 0);
+        let pendingHeader = null;
+
+        lines.forEach(line => {
+          const arr = parseCSV(line)[0] || [];
+          if (!arr.length) return;
+          const first = (arr[0] || '').trim();
+          if (first === 'Table') { pendingHeader = arr; return; }
+          if (first === 'separated' || first.toUpperCase() === 'FILE' ||
+              first.toUpperCase() === 'PCBFILE' || first.toUpperCase() === 'DATE' ||
+              first.toUpperCase() === 'TIME' || first.toUpperCase() === 'PANELYPE') {
+            return;
+          }
+          const tableName = first;
+          if (!tableName) return;
+          if (!tempModel.tables[tableName]) tempModel.tables[tableName] = { header: [], rows: [] };
+          if (pendingHeader) { tempModel.tables[tableName].header = pendingHeader; pendingHeader = null; }
+          tempModel.tables[tableName].rows.push(arr);
+        });
+
+        if (tempModel.tables['Station'] && tempModel.tables['Station'].rows.length) {
+          dpvModel.tables['Station'] = tempModel.tables['Station'];
+          rederiveStNoFromStationByNote();
+          renderDpvTabsFromModel();
+          sortStationTableById();
+          currentTab = 'stacks';
+          $('.tab-btn').removeClass('active');
+          $('.tab-btn[data-tab="stacks"]').addClass('active');
+          $('.tab-content').removeClass('active');
+          $('#tab-stacks').addClass('active');
+          alert('Complete Station data loaded (' + tempModel.tables['Station'].rows.length + ' rows).');
+          return;
+        }
+      }
+
+      // Fall back to old CSV format (ID, Note only)
+      const rows = parseCSV(text);
+      if (!rows.length) { alert('Stack list file is empty.'); return; }
       const header = rows[0].map(h => (h||'').toLowerCase());
       let idCol = header.indexOf('id');
       let noteCol = header.indexOf('note');
@@ -1740,7 +1820,7 @@
 
       const station = ensureDpvTable('Station');
       if (!station.header.length) {
-        station.header = ['Table','No.','ID','DeltX','DeltY','FeedRates','Note','Height','Speed','Status','nPixSizeX','nPixSizeY','HeightTake','DelayTake','nPullStripSpeed','nThreshold','nVisualRadio'];
+        station.header = ['Table','No.','ID','PHead','DeltX','DeltY','FeedRates','Note','Height','Speed','Status','nPixSizeX','nPixSizeY','HeightTake','DelayTake','nPullStripSpeed','nThreshold','nVisualRadio'];
         station.rows = [];
       }
       const idIdx = station.header.indexOf('ID');
@@ -1882,6 +1962,32 @@
         updateComponentsStNo(oldId, newId);
       }
 
+      // Handle PHead column edits: sync to EComponent table
+      let pheadCol = -1;
+      let noteCol = -1;
+      $table.find('thead th').each(function (i) {
+        const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
+        const lbl = label.toLowerCase();
+        if (lbl === 'phead') pheadCol = i;
+        if (lbl === 'note') noteCol = i;
+      });
+
+      if (pheadCol !== -1 && colIndex === pheadCol && noteCol !== -1) {
+        const $row = $cell.closest('tr');
+        const noteVal = $row.children().eq(noteCol).text().trim();
+        const newPHead = $cell.text().trim();
+
+        // Validate PHead value (must be 1 or 2)
+        if (newPHead !== '1' && newPHead !== '2') {
+          $cell.text('1');
+        }
+
+        // Sync PHead to all EComponent rows where Explain matches Note
+        if (noteVal) {
+          syncPHeadToComponents(noteVal, $cell.text().trim());
+        }
+      }
+
       // Always sort by ID after any edit, keeping the edited row selected
       const $row = $cell.closest('tr');
       sortStationTableById();
@@ -1889,6 +1995,28 @@
       $table.find('tbody tr').removeClass('selected');
       $row.addClass('selected');
     });
+
+    // Sync PHead from Station to EComponent based on Note/Explain match
+    function syncPHeadToComponents(noteVal, pheadVal) {
+      const $ecomp = $('#table-dpv-components');
+      const headers = [];
+      $ecomp.find('thead th').each(function () {
+        const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
+        headers.push(label.toLowerCase());
+      });
+
+      const explainIdx = headers.indexOf('explain');
+      const pheadIdx = headers.indexOf('phead');
+      if (explainIdx === -1 || pheadIdx === -1) return;
+
+      $ecomp.find('tbody tr').each(function () {
+        const $row = $(this);
+        const explain = $row.children().eq(explainIdx).text().trim();
+        if (explain === noteVal) {
+          $row.children().eq(pheadIdx).text(pheadVal);
+        }
+      });
+    }
 
     /* ---------- INITIAL TABLES ---------- */
 
@@ -2158,14 +2286,18 @@
     });
 
     $('#btn-load-dpv').on('click', async () => {
-      const result = await loadFileWithDialog('.dpv', 'file-input-dpv');
+      const result = await loadFileWithDialog('.dpv,.dpvx', 'file-input-dpv');
       if (!result) return;
       const { file, name } = result;
       lastDpvFilename = name;
       updateFileDisplay('dpv', name);
       const r = new FileReader();
-      r.onload = evt => {
+      r.onload = async evt => {
         parseDpv(evt.target.result);
+
+        // Check if Station needs PHead column added
+        const addedPHead = ensureStationPHeadColumn();
+
         renderDpvTabsFromModel();
         sortStationTableById();
         currentTab='components';
@@ -2173,12 +2305,109 @@
         $('.tab-btn[data-tab="components"]').addClass('active');
         $('.tab-content').removeClass('active');
         $('#tab-components').addClass('active');
-        if (confirm('DPV loaded. Would you like to Export Material Stacks / Panel List?')) {
+
+        // If PHead was added, auto-convert to DPVx
+        if (addedPHead) {
+          alert('PHead column was added to Material Stacks (derived from Components).\n\nThe file will be converted to DPVx format.');
+          await autoSaveAsDpvx(name);
+        } else if (confirm('DPV loaded. Would you like to Export Material Stacks / Panel List?')) {
           exportMaterialStacksAndPanelLists();
         }
       };
       r.readAsText(file);
     });
+
+    // Ensure Station table has PHead column; if not, add it and derive from EComponent
+    function ensureStationPHeadColumn() {
+      const station = dpvModel.tables['Station'];
+      const ecomp = dpvModel.tables['EComponent'];
+
+      if (!station || !station.header.length) return false;
+
+      // Check if Station already has PHead column
+      const pheadIdx = station.header.indexOf('PHead');
+      if (pheadIdx !== -1) return false; // Already has PHead
+
+      // Find ID column to insert PHead after it
+      const idIdx = station.header.indexOf('ID');
+      if (idIdx === -1) return false;
+
+      // Insert PHead column after ID
+      const insertPos = idIdx + 1;
+      station.header.splice(insertPos, 0, 'PHead');
+
+      // Add default PHead value '1' to all existing rows
+      station.rows.forEach(row => {
+        row.splice(insertPos, 0, '1');
+      });
+
+      // If EComponent has PHead data, derive Station PHead from it
+      if (ecomp && ecomp.header.length && ecomp.rows.length) {
+        const ecPheadIdx = ecomp.header.indexOf('PHead');
+        const ecExplainIdx = ecomp.header.indexOf('Explain');
+        const stNoteIdx = station.header.indexOf('Note');
+        const stPheadIdx = station.header.indexOf('PHead');
+
+        if (ecPheadIdx !== -1 && ecExplainIdx !== -1 && stNoteIdx !== -1 && stPheadIdx !== -1) {
+          // Build map from Explain to PHead from EComponent
+          const explainToPhead = {};
+          ecomp.rows.forEach(row => {
+            const explain = (row[ecExplainIdx] || '').trim();
+            const phead = (row[ecPheadIdx] || '').trim();
+            if (explain && phead && !explainToPhead[explain]) {
+              explainToPhead[explain] = phead;
+            }
+          });
+
+          // Update Station PHead based on Note matching Explain
+          station.rows.forEach(row => {
+            const note = (row[stNoteIdx] || '').trim();
+            if (note && explainToPhead[note]) {
+              row[stPheadIdx] = explainToPhead[note];
+            }
+          });
+        }
+      }
+
+      return true; // PHead was added
+    }
+
+    // Auto-save the current DPV data as DPVx format
+    async function autoSaveAsDpvx(originalName) {
+      rebuildDpvModelFromDom();
+
+      // Generate DPVx filename
+      const dpvxName = originalName.replace(/\.dpv$/i, '.dpvx');
+
+      // Build complete DPVx content
+      const lines = ['separated', 'FILE,' + dpvxName, 'PANELYPE,1'];
+
+      // Add Station table
+      const station = dpvModel.tables['Station'];
+      if (station && station.header.length && station.rows.length) {
+        lines.push('');
+        lines.push(station.header.map(csvEscape).join(','));
+        station.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
+      }
+
+      // Add other tables
+      const otherTables = ['ICTray', 'Panel_Array', 'Panel_Coord', 'EComponent', 'PcbCalib', 'CalibPoint', 'CalibFator'];
+      otherTables.forEach(tableName => {
+        const t = dpvModel.tables[tableName];
+        if (t && t.header.length && t.rows.length) {
+          lines.push('');
+          lines.push(t.header.map(csvEscape).join(','));
+          t.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
+        }
+      });
+
+      await saveFileWithDialog(lines.join('\r\n'), dpvxName, [
+        { description: 'DPVx files (Extended DPV)', accept: { 'text/plain': ['.dpvx'] } }
+      ]);
+
+      lastDpvFilename = dpvxName;
+      updateFileDisplay('dpv', dpvxName);
+    }
 
     // Validate DPV button handler
     $('#btn-validate-dpv').on('click', () => {
@@ -2359,10 +2588,26 @@
         }
       }
 
+      // Convert DPVx to standard Charmhigh DPV format by removing PHead from Station
+      if (dpvModel.tables['Station']) {
+        const station = dpvModel.tables['Station'];
+        const pheadIdx = station.header.indexOf('PHead');
+        if (pheadIdx !== -1) {
+          // Remove PHead from header
+          station.header.splice(pheadIdx, 1);
+          // Remove PHead from all rows
+          station.rows.forEach(row => {
+            row.splice(pheadIdx, 1);
+          });
+        }
+      }
+
       const text = dpvToText();
 
-      const savedName = await saveFileWithDialog(text, lastDpvFilename, [
-        { description: 'DPV files', accept: { 'text/plain': ['.dpv'] } }
+      // Use .dpv extension (convert from .dpvx if needed)
+      const dpvFilename = lastDpvFilename.replace(/\.dpvx$/i, '.dpv');
+      const savedName = await saveFileWithDialog(text, dpvFilename, [
+        { description: 'DPV files (Charmhigh standard)', accept: { 'text/plain': ['.dpv'] } }
       ]);
       if (savedName) lastDpvFilename = savedName;
 
@@ -2377,7 +2622,7 @@
     $('#btn-save-stacklist').on('click', saveStackList);
 
     $('#btn-load-stacklist').on('click', async () => {
-      const result = await loadFileWithDialog('.csv', 'file-input-stacklist');
+      const result = await loadFileWithDialog('.dpvx,.dpv,.csv', 'file-input-stacklist');
       if (!result) return;
       const { file, name } = result;
       lastStacklistFilename = name;
@@ -2386,7 +2631,7 @@
       r.readAsText(file);
     });
 
-    // Export both Material Stacks and Panel Lists as separate DPV files
+    // Export both Material Stacks and Panel Lists as separate DPVx files
     async function exportMaterialStacksAndPanelLists() {
       rebuildDpvModelFromDom();
 
@@ -2396,21 +2641,21 @@
 
       let exported = [];
 
-      // Export Station (Material Stacks) if present
+      // Export Station (Material Stacks) if present - use DPVx format
       if (station && station.header.length && station.rows.length) {
-        const lines = ['separated', 'FILE,station.dpv', 'PANELYPE,1', ''];
+        const lines = ['separated', 'FILE,MaterialStack.dpvx', 'PANELYPE,1', ''];
         lines.push(station.header.map(csvEscape).join(','));
         station.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
 
-        await saveFileWithDialog(lines.join('\r\n'), 'station.dpv', [
-          { description: 'DPV files', accept: { 'text/plain': ['.dpv'] } }
+        await saveFileWithDialog(lines.join('\r\n'), 'MaterialStack.dpvx', [
+          { description: 'DPVx files (Extended DPV)', accept: { 'text/plain': ['.dpvx'] } }
         ]);
         exported.push('Material Stacks (Station)');
       }
 
-      // Export Panel Lists (Panel_Array + Panel_Coord) if present
+      // Export Panel Lists (Panel_Array + Panel_Coord) if present - use DPVx format
       if ((pArray && pArray.rows.length) || (pCoord && pCoord.rows.length)) {
-        const lines = ['separated', 'FILE,panel.dpv', 'PANELYPE,1'];
+        const lines = ['separated', 'FILE,PanelList.dpvx', 'PANELYPE,1'];
 
         if (pArray && pArray.header.length && pArray.rows.length) {
           lines.push('');
@@ -2424,8 +2669,8 @@
           pCoord.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
         }
 
-        await saveFileWithDialog(lines.join('\r\n'), 'panel.dpv', [
-          { description: 'DPV files', accept: { 'text/plain': ['.dpv'] } }
+        await saveFileWithDialog(lines.join('\r\n'), 'PanelList.dpvx', [
+          { description: 'DPVx files (Extended DPV)', accept: { 'text/plain': ['.dpvx'] } }
         ]);
         exported.push('Panel List (Panel_Array/Panel_Coord)');
       }
@@ -2437,7 +2682,7 @@
       }
     }
 
-    // Export Material Stacks (Station) to DPV file
+    // Export Material Stacks (Station) to DPVx file
     $('#btn-export-stacks-dpv').on('click', async () => {
       rebuildDpvModelFromDom();
       const station = dpvModel.tables['Station'];
@@ -2446,18 +2691,18 @@
         return;
       }
 
-      const lines = ['separated', 'FILE,station.dpv', 'PANELYPE,1', ''];
+      const lines = ['separated', 'FILE,MaterialStack.dpvx', 'PANELYPE,1', ''];
       lines.push(station.header.map(csvEscape).join(','));
       station.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
 
-      const savedName = await saveFileWithDialog(lines.join('\r\n'), 'station.dpv', [
-        { description: 'DPV files', accept: { 'text/plain': ['.dpv'] } }
+      const savedName = await saveFileWithDialog(lines.join('\r\n'), 'MaterialStack.dpvx', [
+        { description: 'DPVx files (Extended DPV)', accept: { 'text/plain': ['.dpvx'] } }
       ]);
     });
 
-    // Import Material Stacks (Station) from DPV file
+    // Import Material Stacks (Station) from DPVx/DPV file
     $('#btn-import-stacks-dpv').on('click', async () => {
-      const result = await loadFileWithDialog('.dpv', 'file-input-dpv');
+      const result = await loadFileWithDialog('.dpvx,.dpv', 'file-input-dpv');
       if (!result) return;
       const { file, name } = result;
       const r = new FileReader();
@@ -2491,7 +2736,7 @@
       r.readAsText(file);
     });
 
-    // Export Panel Lists (Panel_Array + Panel_Coord) to DPV file
+    // Export Panel Lists (Panel_Array + Panel_Coord) to DPVx file
     $('#btn-export-panel-dpv').on('click', async () => {
       rebuildDpvModelFromDom();
       const pArray = dpvModel.tables['Panel_Array'];
@@ -2501,7 +2746,7 @@
         return;
       }
 
-      const lines = ['separated', 'FILE,panel.dpv', 'PANELYPE,1'];
+      const lines = ['separated', 'FILE,PanelList.dpvx', 'PANELYPE,1'];
 
       if (pArray && pArray.header.length && pArray.rows.length) {
         lines.push('');
@@ -2515,14 +2760,14 @@
         pCoord.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
       }
 
-      const savedName = await saveFileWithDialog(lines.join('\r\n'), 'panel.dpv', [
-        { description: 'DPV files', accept: { 'text/plain': ['.dpv'] } }
+      const savedName = await saveFileWithDialog(lines.join('\r\n'), 'PanelList.dpvx', [
+        { description: 'DPVx files (Extended DPV)', accept: { 'text/plain': ['.dpvx'] } }
       ]);
     });
 
-    // Import Panel Lists (Panel_Array + Panel_Coord) from DPV file
+    // Import Panel Lists (Panel_Array + Panel_Coord) from DPVx/DPV file
     $('#btn-import-panel-dpv').on('click', async () => {
-      const result = await loadFileWithDialog('.dpv', 'file-input-dpv');
+      const result = await loadFileWithDialog('.dpvx,.dpv', 'file-input-dpv');
       if (!result) return;
       const { file, name } = result;
       const r = new FileReader();
@@ -2685,9 +2930,10 @@
       // Get existing row count for No. column
       let targetRowNo = $targetTable.find('tbody tr').length;
 
-      // Default values for Station columns not in Panel_Coord
+      // Default values for Station columns not in Panel_Coord (PHead after ID)
       const stationDefaults = {
         'table': 'Station',
+        'phead': '1',
         'feedrates': '4',
         'note': '',
         'height': '0.5',
@@ -2789,6 +3035,343 @@
         e.preventDefault();
         $cell.text((currentVal === '1' || currentVal === '') ? '2' : '1');
       }
+    });
+
+    /* ---------- Master Feeder Library ---------- */
+
+    // Get library from localStorage
+    function getFeederLibrary() {
+      try {
+        const data = localStorage.getItem(LIBRARY_STORAGE_KEY);
+        return data ? JSON.parse(data) : {};
+      } catch (e) {
+        console.warn('Failed to load feeder library:', e);
+        return {};
+      }
+    }
+
+    // Save library to localStorage
+    function saveFeederLibrary(library) {
+      try {
+        localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(library));
+      } catch (e) {
+        console.error('Failed to save feeder library:', e);
+        alert('Failed to save library to browser storage.');
+      }
+    }
+
+    // Get Station table column indices
+    function getStationColumnIndices() {
+      const $table = $('#table-dpv-stacks');
+      const headers = [];
+      $table.find('thead th').each(function () {
+        const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
+        headers.push(label.toLowerCase());
+      });
+      return {
+        note: headers.indexOf('note'),
+        phead: headers.indexOf('phead'),
+        deltx: headers.indexOf('deltx'),
+        delty: headers.indexOf('delty'),
+        feedrates: headers.indexOf('feedrates'),
+        height: headers.indexOf('height'),
+        speed: headers.indexOf('speed'),
+        heighttake: headers.indexOf('heighttake'),
+        delaytake: headers.indexOf('delaytake'),
+        npullstripspeed: headers.indexOf('npullstripspeed'),
+        nthreshold: headers.indexOf('nthreshold'),
+        nvisualradio: headers.indexOf('nvisualradio'),
+        headers: headers
+      };
+    }
+
+    // Save selected rows to library (keyed by Note value)
+    function saveSelectedToLibrary() {
+      const $table = $('#table-dpv-stacks');
+      const $selectedRows = $table.find('tbody tr.selected');
+      if ($selectedRows.length === 0) {
+        alert('No rows selected. Select rows in Material Stacks first, then click "Save to Library".');
+        return;
+      }
+
+      const cols = getStationColumnIndices();
+      if (cols.note === -1) {
+        alert('Note column not found in Station table.');
+        return;
+      }
+
+      const library = getFeederLibrary();
+      let savedCount = 0;
+      let skippedCount = 0;
+
+      $selectedRows.each(function () {
+        const $cells = $(this).children();
+        const noteVal = $cells.eq(cols.note).text().trim();
+        if (!noteVal) {
+          skippedCount++;
+          return;
+        }
+
+        // Build entry with all relevant parameters
+        const entry = {};
+        if (cols.phead !== -1) entry.PHead = $cells.eq(cols.phead).text().trim() || '1';
+        if (cols.deltx !== -1) entry.DeltX = $cells.eq(cols.deltx).text().trim() || '0';
+        if (cols.delty !== -1) entry.DeltY = $cells.eq(cols.delty).text().trim() || '0';
+        if (cols.feedrates !== -1) entry.FeedRates = $cells.eq(cols.feedrates).text().trim() || '0';
+        if (cols.height !== -1) entry.Height = $cells.eq(cols.height).text().trim() || '0';
+        if (cols.speed !== -1) entry.Speed = $cells.eq(cols.speed).text().trim() || '0';
+        if (cols.heighttake !== -1) entry.HeightTake = $cells.eq(cols.heighttake).text().trim() || '0';
+        if (cols.delaytake !== -1) entry.DelayTake = $cells.eq(cols.delaytake).text().trim() || '0';
+        if (cols.npullstripspeed !== -1) entry.nPullStripSpeed = $cells.eq(cols.npullstripspeed).text().trim() || '0';
+        if (cols.nthreshold !== -1) entry.nThreshold = $cells.eq(cols.nthreshold).text().trim() || '0';
+        if (cols.nvisualradio !== -1) entry.nVisualRadio = $cells.eq(cols.nvisualradio).text().trim() || '0';
+
+        library[noteVal] = entry;
+        savedCount++;
+      });
+
+      saveFeederLibrary(library);
+
+      let msg = `Saved ${savedCount} entr${savedCount === 1 ? 'y' : 'ies'} to library.`;
+      if (skippedCount > 0) {
+        msg += ` Skipped ${skippedCount} row(s) with empty Note.`;
+      }
+      alert(msg);
+    }
+
+    // Apply library to current Material Stacks (match by Note)
+    function applyLibraryToStacks() {
+      const library = getFeederLibrary();
+      if (Object.keys(library).length === 0) {
+        alert('Library is empty. Save some stacks to the library first.');
+        return;
+      }
+
+      const $table = $('#table-dpv-stacks');
+      const $tbody = $table.find('tbody');
+      if (!$tbody.length) return;
+
+      const cols = getStationColumnIndices();
+      if (cols.note === -1) {
+        alert('Note column not found in Station table.');
+        return;
+      }
+
+      let matchCount = 0;
+      $tbody.find('tr').each(function () {
+        const $cells = $(this).children();
+        const noteVal = $cells.eq(cols.note).text().trim();
+        if (!noteVal || !library[noteVal]) return;
+
+        const entry = library[noteVal];
+        // Apply all stored values
+        if (entry.PHead && cols.phead !== -1) $cells.eq(cols.phead).text(entry.PHead);
+        if (entry.DeltX && cols.deltx !== -1) $cells.eq(cols.deltx).text(entry.DeltX);
+        if (entry.DeltY && cols.delty !== -1) $cells.eq(cols.delty).text(entry.DeltY);
+        if (entry.FeedRates && cols.feedrates !== -1) $cells.eq(cols.feedrates).text(entry.FeedRates);
+        if (entry.Height && cols.height !== -1) $cells.eq(cols.height).text(entry.Height);
+        if (entry.Speed && cols.speed !== -1) $cells.eq(cols.speed).text(entry.Speed);
+        if (entry.HeightTake && cols.heighttake !== -1) $cells.eq(cols.heighttake).text(entry.HeightTake);
+        if (entry.DelayTake && cols.delaytake !== -1) $cells.eq(cols.delaytake).text(entry.DelayTake);
+        if (entry.nPullStripSpeed && cols.npullstripspeed !== -1) $cells.eq(cols.npullstripspeed).text(entry.nPullStripSpeed);
+        if (entry.nThreshold && cols.nthreshold !== -1) $cells.eq(cols.nthreshold).text(entry.nThreshold);
+        if (entry.nVisualRadio && cols.nvisualradio !== -1) $cells.eq(cols.nvisualradio).text(entry.nVisualRadio);
+
+        // Sync PHead to Components if applicable
+        if (entry.PHead && cols.phead !== -1) {
+          syncPHeadToComponents(noteVal, entry.PHead);
+        }
+
+        matchCount++;
+      });
+
+      if (matchCount > 0) {
+        alert(`Applied library settings to ${matchCount} matching stack(s).`);
+      } else {
+        alert('No matching entries found in library. Library matches by Note (component value).');
+      }
+    }
+
+    // Auto-apply library during CSV-to-DPV conversion (called from Convert to DPV)
+    function autoApplyLibraryToModel() {
+      const library = getFeederLibrary();
+      if (Object.keys(library).length === 0) return 0;
+
+      const station = dpvModel.tables['Station'];
+      if (!station || !station.header.length) return 0;
+
+      const noteIdx = station.header.indexOf('Note');
+      const pheadIdx = station.header.indexOf('PHead');
+      const deltxIdx = station.header.indexOf('DeltX');
+      const deltyIdx = station.header.indexOf('DeltY');
+      const feedratesIdx = station.header.indexOf('FeedRates');
+      const heightIdx = station.header.indexOf('Height');
+      const speedIdx = station.header.indexOf('Speed');
+      const heighttakeIdx = station.header.indexOf('HeightTake');
+      const delaytakeIdx = station.header.indexOf('DelayTake');
+      const pullstripIdx = station.header.indexOf('nPullStripSpeed');
+      const thresholdIdx = station.header.indexOf('nThreshold');
+      const visualradioIdx = station.header.indexOf('nVisualRadio');
+
+      if (noteIdx === -1) return 0;
+
+      let matchCount = 0;
+      station.rows.forEach(row => {
+        const noteVal = (row[noteIdx] || '').trim();
+        if (!noteVal || !library[noteVal]) return;
+
+        const entry = library[noteVal];
+        if (entry.PHead && pheadIdx !== -1) row[pheadIdx] = entry.PHead;
+        if (entry.DeltX && deltxIdx !== -1) row[deltxIdx] = entry.DeltX;
+        if (entry.DeltY && deltyIdx !== -1) row[deltyIdx] = entry.DeltY;
+        if (entry.FeedRates && feedratesIdx !== -1) row[feedratesIdx] = entry.FeedRates;
+        if (entry.Height && heightIdx !== -1) row[heightIdx] = entry.Height;
+        if (entry.Speed && speedIdx !== -1) row[speedIdx] = entry.Speed;
+        if (entry.HeightTake && heighttakeIdx !== -1) row[heighttakeIdx] = entry.HeightTake;
+        if (entry.DelayTake && delaytakeIdx !== -1) row[delaytakeIdx] = entry.DelayTake;
+        if (entry.nPullStripSpeed && pullstripIdx !== -1) row[pullstripIdx] = entry.nPullStripSpeed;
+        if (entry.nThreshold && thresholdIdx !== -1) row[thresholdIdx] = entry.nThreshold;
+        if (entry.nVisualRadio && visualradioIdx !== -1) row[visualradioIdx] = entry.nVisualRadio;
+
+        matchCount++;
+      });
+
+      // Also update EComponent PHead to match
+      if (matchCount > 0) {
+        const ecomp = dpvModel.tables['EComponent'];
+        if (ecomp && ecomp.header.length) {
+          const ecExplainIdx = ecomp.header.indexOf('Explain');
+          const ecPheadIdx = ecomp.header.indexOf('PHead');
+          if (ecExplainIdx !== -1 && ecPheadIdx !== -1) {
+            ecomp.rows.forEach(row => {
+              const explain = (row[ecExplainIdx] || '').trim();
+              if (explain && library[explain] && library[explain].PHead) {
+                row[ecPheadIdx] = library[explain].PHead;
+              }
+            });
+          }
+        }
+      }
+
+      return matchCount;
+    }
+
+    // Render library modal content
+    function renderLibraryModal() {
+      const library = getFeederLibrary();
+      const $entries = $('#library-entries');
+      const $empty = $('#library-empty');
+      const keys = Object.keys(library).sort();
+
+      if (keys.length === 0) {
+        $entries.hide();
+        $empty.show();
+        return;
+      }
+
+      $empty.hide();
+      $entries.show();
+
+      let html = '<table style="width:100%;border-collapse:collapse;">';
+      html += '<thead><tr style="background:#f3f4f6;"><th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e5e7eb;">Note (Key)</th>';
+      html += '<th style="text-align:center;padding:4px 8px;border-bottom:1px solid #e5e7eb;">PHead</th>';
+      html += '<th style="text-align:center;padding:4px 8px;border-bottom:1px solid #e5e7eb;">DeltX</th>';
+      html += '<th style="text-align:center;padding:4px 8px;border-bottom:1px solid #e5e7eb;">DeltY</th>';
+      html += '<th style="text-align:center;padding:4px 8px;border-bottom:1px solid #e5e7eb;">Height</th>';
+      html += '<th style="text-align:center;padding:4px 8px;border-bottom:1px solid #e5e7eb;">Speed</th>';
+      html += '<th style="text-align:center;padding:4px 8px;border-bottom:1px solid #e5e7eb;">Actions</th></tr></thead><tbody>';
+
+      keys.forEach(key => {
+        const e = library[key];
+        html += `<tr style="border-bottom:1px solid #e5e7eb;">`;
+        html += `<td style="padding:4px 8px;max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${key}">${key}</td>`;
+        html += `<td style="text-align:center;padding:4px 8px;">${e.PHead || '1'}</td>`;
+        html += `<td style="text-align:center;padding:4px 8px;">${e.DeltX || '0'}</td>`;
+        html += `<td style="text-align:center;padding:4px 8px;">${e.DeltY || '0'}</td>`;
+        html += `<td style="text-align:center;padding:4px 8px;">${e.Height || '0'}</td>`;
+        html += `<td style="text-align:center;padding:4px 8px;">${e.Speed || '0'}</td>`;
+        html += `<td style="text-align:center;padding:4px 8px;"><button class="btn small danger library-delete-entry" data-key="${key}">Delete</button></td>`;
+        html += `</tr>`;
+      });
+
+      html += '</tbody></table>';
+      html += `<p style="margin-top:12px;color:#6b7280;font-size:12px;">${keys.length} entr${keys.length === 1 ? 'y' : 'ies'} in library</p>`;
+      $entries.html(html);
+    }
+
+    // Show library modal
+    function showLibraryModal() {
+      renderLibraryModal();
+      $('#library-modal').addClass('visible');
+    }
+
+    function hideLibraryModal() {
+      $('#library-modal').removeClass('visible');
+    }
+
+    // Library button handlers
+    $('#btn-save-to-library').on('click', saveSelectedToLibrary);
+    $('#btn-apply-library').on('click', applyLibraryToStacks);
+    $('#btn-manage-library').on('click', showLibraryModal);
+
+    // Library modal handlers
+    $('#library-close, #library-close-footer').on('click', hideLibraryModal);
+    $('#library-modal').on('click', function (e) {
+      if (e.target === e.currentTarget) hideLibraryModal();
+    });
+
+    // Delete entry from library
+    $(document).on('click', '.library-delete-entry', function () {
+      const key = $(this).data('key');
+      if (!confirm(`Delete library entry "${key}"?`)) return;
+      const library = getFeederLibrary();
+      delete library[key];
+      saveFeederLibrary(library);
+      renderLibraryModal();
+    });
+
+    // Clear all library entries
+    $('#library-clear').on('click', function () {
+      if (!confirm('Delete ALL library entries? This cannot be undone.')) return;
+      saveFeederLibrary({});
+      renderLibraryModal();
+    });
+
+    // Export library to JSON file
+    $('#library-export').on('click', async function () {
+      const library = getFeederLibrary();
+      if (Object.keys(library).length === 0) {
+        alert('Library is empty.');
+        return;
+      }
+      const content = JSON.stringify(library, null, 2);
+      await saveFileWithDialog(content, 'FeederLibrary.json', [
+        { description: 'JSON files', accept: { 'application/json': ['.json'] } }
+      ]);
+    });
+
+    // Import library from JSON file
+    $('#library-import').on('click', async function () {
+      const result = await loadFileWithDialog('.json', 'file-input-library');
+      if (!result) return;
+      const r = new FileReader();
+      r.onload = evt => {
+        try {
+          const imported = JSON.parse(evt.target.result);
+          if (typeof imported !== 'object' || Array.isArray(imported)) {
+            alert('Invalid library format. Expected JSON object.');
+            return;
+          }
+          const existing = getFeederLibrary();
+          const merged = { ...existing, ...imported };
+          saveFeederLibrary(merged);
+          renderLibraryModal();
+          alert(`Imported ${Object.keys(imported).length} entries. Library now has ${Object.keys(merged).length} total entries.`);
+        } catch (e) {
+          alert('Failed to parse library file: ' + e.message);
+        }
+      };
+      r.readAsText(result.file);
     });
 
     /* ---------- Help modal (tab-aware) ---------- */
@@ -2893,6 +3476,15 @@
                 <li>Re-derives Components.<strong>STNo.</strong> by matching Station.<strong>Note</strong> to EComponent.<strong>Explain</strong> (KiCad Val).</li>
               </ul>
             </li>
+          </ul>
+          <h3>Master Feeder Library</h3>
+          <p>Store feeder configurations for reuse across projects:</p>
+          <ul>
+            <li><strong>Save to Library</strong>: Save selected rows to browser storage. Entries are keyed by <strong>Note</strong> (component value).</li>
+            <li><strong>Apply Library</strong>: Auto-match current stacks by Note and apply stored settings (PHead, DeltX, DeltY, Height, Speed, etc.).</li>
+            <li><strong>Manage Library</strong>: View, delete, export, or import library entries.</li>
+            <li>Library is <strong>auto-applied</strong> when converting CSV → DPV, so matching components get your saved feeder settings automatically.</li>
+            <li>Export/Import library as JSON for backup or sharing between browsers.</li>
           </ul>
         `;
       } else if (tab === 'panel') {
