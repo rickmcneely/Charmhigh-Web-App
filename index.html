@@ -1,0 +1,1965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ConverTool Web – CHMT48VB Helper</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%23111827'/%3E%3Crect x='4' y='4' width='24' height='24' rx='2' fill='%2310b981' opacity='0.9'/%3E%3Ccircle cx='10' cy='10' r='2' fill='%23111827'/%3E%3Ccircle cx='22' cy='10' r='2' fill='%23111827'/%3E%3Ccircle cx='10' cy='22' r='2' fill='%23111827'/%3E%3Ccircle cx='22' cy='22' r='2' fill='%23111827'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23111827'/%3E%3Cpath d='M10 10h12M10 22h12M10 10v12M22 10v12' stroke='%23111827' stroke-width='0.5' opacity='0.3'/%3E%3C/svg%3E">
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: #f3f4f6;
+      color: #111827;
+    }
+
+    header {
+      background: #111827;
+      color: #f9fafb;
+      padding: 10px 16px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+    }
+
+    .header-main {
+      width: 100%;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .subtitle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 2px;
+    }
+
+    .subtitle {
+      font-size: 12px;
+      opacity: 0.85;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .header-meta {
+      font-size: 12px;
+      opacity: 0.8;
+      white-space: nowrap;
+      margin-left: 8px;
+    }
+
+    .toolbar {
+      padding: 8px 16px;
+      background: #e5e7eb;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      border-bottom: 1px solid #d1d5db;
+      flex-wrap: wrap;
+    }
+
+    .toolbar-secondary {
+      padding: 4px 8px;
+      background: #f3f4f6;
+      border-radius: 6px;
+      margin: 4px 0 6px;
+      border: 1px solid #e5e7eb;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .toolbar-spacer {
+      flex: 1 1 auto;
+    }
+
+    .btn {
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid #9ca3af;
+      background: #f9fafb;
+      font-size: 13px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn.primary {
+      background: #2563eb;
+      border-color: #2563eb;
+      color: #f9fafb;
+    }
+
+    .btn.danger {
+      border-color: #b91c1c;
+      color: #b91c1c;
+      background: #fef2f2;
+    }
+
+    .btn.small {
+      padding: 4px 10px;
+      font-size: 12px;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .main {
+      padding: 8px 16px 16px;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #d1d5db;
+      margin-bottom: 8px;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    .tab-btn {
+      padding: 6px 14px;
+      border-radius: 999px 999px 0 0;
+      border: 1px solid transparent;
+      border-bottom: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .tab-btn.active {
+      background: #ffffff;
+      border-color: #d1d5db;
+      border-bottom-color: #ffffff;
+      font-weight: 600;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .grid-wrapper {
+      background: #ffffff;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      padding: 8px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+      overflow: auto;
+      max-height: calc(100vh - 220px);
+    }
+
+    table.data-grid {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 12px;
+      min-width: 600px;
+    }
+
+    table.data-grid thead {
+      position: sticky;
+      top: 0;
+      background: #f9fafb;
+      z-index: 1;
+    }
+
+    table.data-grid th,
+    table.data-grid td {
+      border: 1px solid #e5e7eb;
+      padding: 4px 6px;
+      min-width: 80px;
+      max-width: 260px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    table.data-grid th {
+      font-weight: 600;
+      text-align: left;
+    }
+
+    .th-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+
+    .th-left {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .th-right {
+      flex: 0 0 auto;
+      display: inline-flex;
+      gap: 2px;
+      font-size: 10px;
+      color: #6b7280;
+    }
+
+    .sort-btn {
+      cursor: pointer;
+      user-select: none;
+      padding: 0 2px;
+    }
+
+    .sort-btn:hover {
+      color: #111827;
+    }
+
+    table.data-grid td[contenteditable] {
+      cursor: text;
+    }
+
+    table.data-grid tbody tr:nth-child(even) {
+      background: #f9fafb;
+    }
+
+    table.data-grid tbody tr.selected {
+      background: #dbeafe !important;
+    }
+
+    .status-bar {
+      margin-top: 6px;
+      font-size: 11px;
+      color: #6b7280;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .status-bar .pill {
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #e5e7eb;
+      font-size: 10px;
+    }
+
+    h4.section-title {
+      margin: 8px 0 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    ::-webkit-scrollbar {
+      height: 8px;
+      width: 8px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #9ca3af;
+      border-radius: 999px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #e5e7eb;
+    }
+
+    /* read-only STNo cells */
+    td.readonly-stno {
+      background: #f3f4f6;
+      color: #6b7280;
+      cursor: default !important;
+    }
+
+    /* Skipped components (Skip=1) */
+    table.data-grid tbody tr.skip-row {
+      background: #fef2f2 !important;
+      color: #9ca3af;
+      text-decoration: line-through;
+    }
+
+    table.data-grid tbody tr.skip-row.selected {
+      background: #fecaca !important;
+    }
+
+    /* Help modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.5);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+    }
+
+    .modal-backdrop.visible {
+      display: flex;
+    }
+
+    .modal-dialog {
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.25);
+      max-width: 720px;
+      width: 100%;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .modal-header {
+      padding: 10px 16px;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-header h2 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .modal-body {
+      padding: 12px 16px 14px;
+      overflow: auto;
+      font-size: 13px;
+    }
+
+    .modal-body h3 {
+      margin: 10px 0 4px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .modal-body p {
+      margin: 4px 0;
+    }
+
+    .modal-body ul {
+      margin: 4px 0 8px 18px;
+      padding: 0;
+    }
+
+    .modal-footer {
+      padding: 8px 16px 10px;
+      border-top: 1px solid #e5e7eb;
+      text-align: right;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 999px;
+      font-size: 10px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+      margin-left: 6px;
+    }
+
+    /* Offset controls */
+    .offset-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #fefce8;
+      border: 1px solid #fde047;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+
+    .offset-group label {
+      font-weight: 500;
+      color: #854d0e;
+    }
+
+    .offset-group input {
+      width: 70px;
+      padding: 3px 6px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-size: 12px;
+      text-align: right;
+    }
+
+    .offset-group input:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+    }
+
+    .offset-group .unit {
+      color: #6b7280;
+      font-size: 11px;
+    }
+
+    .offset-divider {
+      width: 1px;
+      height: 24px;
+      background: #d1d5db;
+      margin: 0 4px;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div class="header-main">
+    <h1>ConverTool Web</h1>
+    <div class="subtitle-row">
+      <div class="subtitle">Charmhigh CHMT48VB – KiCad CSV ⇄ DPV</div>
+      <div class="header-meta" id="header-meta"></div>
+    </div>
+  </div>
+</header>
+
+<!-- MAIN TOOLBAR -->
+<div class="toolbar">
+  <button id="btn-load-csv" class="btn">Load CSV/POS</button>
+  <button id="btn-save-csv" class="btn primary">Save CSV</button>
+
+  <button id="btn-load-dpv" class="btn">Load DPV</button>
+  <button id="btn-export-dpv" class="btn">Export DPV</button>
+  <button id="btn-save-dpv" class="btn">Save DPV</button>
+
+  <div class="offset-divider"></div>
+
+  <!-- X/Y Offset Controls -->
+  <div class="offset-group">
+    <label for="offset-x">X Offset:</label>
+    <input type="number" id="offset-x" step="0.01" value="0" title="X offset in mm (added to all X coordinates)">
+    <span class="unit">mm</span>
+  </div>
+  <div class="offset-group">
+    <label for="offset-y">Y Offset:</label>
+    <input type="number" id="offset-y" step="0.01" value="0" title="Y offset in mm (added to all Y coordinates)">
+    <span class="unit">mm</span>
+  </div>
+  <div class="toolbar-spacer"></div>
+  <button id="btn-help" class="btn small">Help</button>
+</div>
+
+<div class="main">
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="csv">CSV/POS</button>
+    <button class="tab-btn" data-tab="components">Components</button>
+    <button class="tab-btn" data-tab="stacks">Material Stacks</button>
+    <button class="tab-btn" data-tab="panel">Panel List</button>
+  </div>
+
+  <!-- CSV TAB -->
+  <div id="tab-csv" class="tab-content active">
+    <div class="toolbar-secondary row-tools" data-target-table="table-csv">
+      <span style="font-size:12px;color:#4b5563;margin-right:4px;">CSV rows:</span>
+      <button class="btn small btn-add-row">Add Row</button>
+      <button class="btn small danger btn-delete-rows">Delete Selected Rows</button>
+      <button class="btn small btn-clear-rows">Clear Rows (Keep Header)</button>
+    </div>
+    <div class="grid-wrapper">
+      <table id="table-csv" class="data-grid"></table>
+    </div>
+    <div class="status-bar">
+      <span>CSV/POS: KiCad placement export (<strong>Ref, Val, Package, PosX, PosY, Rot, Side</strong>). Offsets applied on Save/Export (original unchanged).</span>
+      <span class="pill">Active Tab: CSV/POS</span>
+    </div>
+  </div>
+
+  <!-- COMPONENTS TAB (EComponent) -->
+  <div id="tab-components" class="tab-content">
+    <div class="toolbar-secondary row-tools" data-target-table="table-dpv-components">
+      <span style="font-size:12px;color:#4b5563;margin-right:4px;">Components rows:</span>
+      <button class="btn small btn-add-row">Add Row</button>
+      <button class="btn small danger btn-delete-rows">Delete Selected Rows</button>
+      <button class="btn small btn-clear-rows">Clear Rows (Keep Header)</button>
+      <span style="margin-left:8px;border-left:1px solid #d1d5db;padding-left:8px;"></span>
+      <button class="btn small" id="btn-toggle-skip" title="Toggle Skip flag on selected rows (0=place, 1=skip)">Toggle Skip</button>
+    </div>
+    <div class="grid-wrapper">
+      <table id="table-dpv-components" class="data-grid"></table>
+    </div>
+    <div class="status-bar">
+      <span>Components: DPV <strong>EComponent</strong>. Offsets applied on Save DPV (original unchanged).</span>
+      <span class="pill">Active Tab: Components (DPV)</span>
+    </div>
+  </div>
+
+  <!-- MATERIAL STACKS TAB (Station) -->
+  <div id="tab-stacks" class="tab-content">
+    <div class="toolbar-secondary row-tools" data-target-table="table-dpv-stacks">
+      <span style="font-size:12px;color:#4b5563;margin-right:4px;">Material stacks rows:</span>
+      <button class="btn small btn-add-row">Add Row</button>
+      <button class="btn small danger btn-delete-rows">Delete Selected Rows</button>
+      <button class="btn small btn-clear-rows">Clear Rows (Keep Header)</button>
+      <span class="toolbar-spacer"></span>
+      <button class="btn small" id="btn-save-stacklist">Save Stack List</button>
+      <button class="btn small" id="btn-load-stacklist">Load Stack List</button>
+    </div>
+    <div class="grid-wrapper">
+      <table id="table-dpv-stacks" class="data-grid"></table>
+    </div>
+    <div class="status-bar">
+      <span>Material Stacks: DPV <strong>Station</strong>. IDs must be unique; STNo. is mapped from here.</span>
+      <span class="pill">Active Tab: Material Stacks (DPV)</span>
+    </div>
+  </div>
+
+  <!-- PANEL LIST TAB -->
+  <div id="tab-panel" class="tab-content">
+    <h4 class="section-title">Panel Array (Panel_Array)</h4>
+    <div class="toolbar-secondary row-tools" data-target-table="table-dpv-panel-array">
+      <span style="font-size:12px;color:#4b5563;margin-right:4px;">Panel_Array rows:</span>
+      <button class="btn small btn-add-row">Add Row</button>
+      <button class="btn small danger btn-delete-rows">Delete Selected Rows</button>
+      <button class="btn small btn-clear-rows">Clear Rows (Keep Header)</button>
+    </div>
+    <div class="grid-wrapper">
+      <table id="table-dpv-panel-array" class="data-grid"></table>
+    </div>
+
+    <h4 class="section-title">Panel Coordinates (Panel_Coord)</h4>
+    <div class="toolbar-secondary row-tools" data-target-table="table-dpv-panel-coord">
+      <span style="font-size:12px;color:#4b5563;margin-right:4px;">Panel_Coord rows:</span>
+      <button class="btn small btn-add-row">Add Row</button>
+      <button class="btn small danger btn-delete-rows">Delete Selected Rows</button>
+      <button class="btn small btn-clear-rows">Clear Rows (Keep Header)</button>
+    </div>
+    <div class="grid-wrapper">
+      <table id="table-dpv-panel-coord" class="data-grid"></table>
+    </div>
+
+    <div class="status-bar">
+      <span>Panel List: DPV <strong>Panel_Array</strong> &amp; <strong>Panel_Coord</strong>.</span>
+      <span class="pill">Active Tab: Panel List (DPV)</span>
+    </div>
+  </div>
+</div>
+
+<!-- HELP MODAL -->
+<div id="help-modal" class="modal-backdrop">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h2>ConverTool Web Help <span class="badge" id="help-badge"></span></h2>
+      <button id="help-close" class="btn small">Close</button>
+    </div>
+    <div class="modal-body" id="help-body">
+      <!-- Filled dynamically based on active tab -->
+    </div>
+    <div class="modal-footer">
+      <button id="help-close-footer" class="btn small">Got it</button>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden file inputs -->
+<input id="file-input-csv" type="file" accept=".csv,.pos,text/csv,text/plain" style="display:none">
+<input id="file-input-dpv" type="file" accept=".dpv,text/plain" style="display:none">
+<input id="file-input-stacklist" type="file" accept=".csv,text/csv,text/plain" style="display:none">
+
+<script>
+  // Global app metadata
+  const APP_VERSION = '0.04';
+  const COPYRIGHT_YEAR = '2025';
+  const COPYRIGHT_NAME = 'Rick McNeely';
+
+  $(function () {
+    let currentTab = 'csv';
+    let dpvModel = { headerLines: [], tables: {} };
+
+    // Set header meta and help badge from constants
+    $('#header-meta').text('© ' + COPYRIGHT_YEAR + ' ' + COPYRIGHT_NAME + ' — v' + APP_VERSION);
+    $('#help-badge').text('CHMT48VB v' + APP_VERSION);
+
+    // Get current offset values
+    function getOffsets() {
+      return {
+        x: parseFloat($('#offset-x').val()) || 0,
+        y: parseFloat($('#offset-y').val()) || 0
+      };
+    }
+
+    function csvEscape(val) {
+      val = val == null ? '' : String(val);
+      if (val.indexOf('"') !== -1) val = val.replace(/"/g, '""');
+      if (val.indexOf(',') !== -1 || /\s/.test(val)) val = '"' + val + '"';
+      return val;
+    }
+
+    /* ---------- CSV helpers ---------- */
+
+    function createHeaderCell(label, colIndex, sortable) {
+      const $th = $('<th></th>');
+      const $inner = $('<div class="th-inner"></div>');
+      const $left = $('<div class="th-left"></div>').text(label || '');
+      const $right = $('<div class="th-right"></div>');
+
+      if (sortable) {
+        const $up = $('<span class="sort-btn sort-up">▲</span>').attr('data-col-index', colIndex)
+          .attr('title', 'Sort ascending');
+        const $down = $('<span class="sort-btn sort-down">▼</span>').attr('data-col-index', colIndex)
+          .attr('title', 'Sort descending');
+        $right.append($up).append($down);
+      }
+
+      $inner.append($left).append($right);
+      $th.append($inner);
+      return $th;
+    }
+
+    function createDefaultCsvTable() {
+      const $table = $('#table-csv').empty();
+      const headers = ['Ref','Val','Package','PosX','PosY','Rot','Side'];
+      const $thead = $('<thead><tr></tr></thead>');
+      headers.forEach((h, idx) => $thead.find('tr').append(createHeaderCell(h, idx, true)));
+      const $tbody = $('<tbody></tbody>');
+      $table.append($thead).append($tbody);
+    }
+
+    function addEmptyRow(tableId) {
+      // Use specialized function for Material Stacks table
+      if (tableId === 'table-dpv-stacks') {
+        addStationRow();
+        return;
+      }
+
+      const $table = $('#' + tableId);
+      const colCount = $table.find('thead th').length;
+      if (!colCount) return;
+      const $tr = $('<tr></tr>');
+      for (let i = 0; i < colCount; i++) {
+        $('<td contenteditable="true"></td>').appendTo($tr);
+      }
+      $table.find('tbody').append($tr);
+    }
+
+    // Add a new row to Station table with default values and unique ID
+    function addStationRow() {
+      const $table = $('#table-dpv-stacks');
+      const $headers = $table.find('thead th');
+      if (!$headers.length) return;
+
+      // Get header names to find column indices
+      const headers = [];
+      $headers.each(function () {
+        const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
+        headers.push(label.toLowerCase());
+      });
+
+      // Find existing IDs to determine next unique ID
+      const idCol = headers.indexOf('id');
+      const usedIds = new Set();
+      $table.find('tbody tr').each(function () {
+        if (idCol !== -1) {
+          const idVal = $(this).children().eq(idCol).text().trim();
+          if (idVal) usedIds.add(parseInt(idVal, 10) || 0);
+        }
+      });
+
+      // Find next available ID
+      let nextId = 1;
+      while (usedIds.has(nextId)) nextId++;
+
+      // Get row count for No. column
+      const rowNo = $table.find('tbody tr').length;
+
+      // Default values for Station table:
+      // Table, No., ID, DeltX, DeltY, FeedRates, Note, Height, Speed, Status,
+      // nPixSizeX, nPixSizeY, HeightTake, DelayTake, nPullStripSpeed, nThreshold, nVisualRadio
+      const defaults = {
+        'table': 'Station',
+        'no.': String(rowNo),
+        'id': String(nextId),
+        'deltx': '0',
+        'delty': '0',
+        'feedrates': '4',
+        'note': '',
+        'height': '0.5',
+        'speed': '0',
+        'status': '4',
+        'npixsizex': '0',
+        'npixsizey': '0',
+        'heighttake': '0',
+        'delaytake': '10',
+        'npullstripspeed': '85',
+        'nthreshold': '110',
+        'nvisualradio': '200'
+      };
+
+      const $tr = $('<tr></tr>');
+      headers.forEach(h => {
+        const val = defaults[h] !== undefined ? defaults[h] : '';
+        $('<td contenteditable="true"></td>').text(val).appendTo($tr);
+      });
+
+      $table.find('tbody').append($tr);
+    }
+
+    function clearRows(tableId) {
+      $('#' + tableId + ' tbody').empty();
+    }
+
+    function parseCSV(text) {
+      const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim().length > 0);
+      const rows = [];
+      lines.forEach(line => {
+        const parts = [];
+        let cur = '', inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') {
+            if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+            else inQ = !inQ;
+          } else if (ch === ',' && !inQ) {
+            parts.push(cur); cur = '';
+          } else cur += ch;
+        }
+        parts.push(cur);
+        rows.push(parts.map(v => v.trim()));
+      });
+      return rows;
+    }
+
+    // Detect if text is KiCad .pos format (space-delimited with # comments)
+    function isPosFormat(text) {
+      const lines = text.replace(/\r/g, '').split('\n');
+      // Look for KiCad .pos signatures: lines starting with ### or ## or # Ref
+      for (const line of lines) {
+        const t = line.trim();
+        if (t.startsWith('###') || t.startsWith('## Unit') || t.startsWith('## Side')) {
+          return true;
+        }
+        // Header line in .pos starts with "# Ref"
+        if (/^#\s+Ref\s+/i.test(t)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // Parse KiCad .pos file format (space/tab delimited with # comments)
+    function parsePOS(text) {
+      const lines = text.replace(/\r/g, '').split('\n');
+      const rows = [];
+      let headers = null;
+
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t) continue;
+
+        // Skip comment lines starting with ## or ###
+        if (t.startsWith('##')) continue;
+
+        // Header line starts with "# " followed by column names
+        if (t.startsWith('# ') && !headers) {
+          // Remove the leading "# " and split by whitespace
+          const headerLine = t.substring(2).trim();
+          headers = headerLine.split(/\s+/);
+          rows.push(headers);
+          continue;
+        }
+
+        // Skip any other comment lines
+        if (t.startsWith('#')) continue;
+
+        // Data line - split by whitespace
+        // But be careful: some fields might have multiple words, though KiCad .pos typically doesn't
+        const parts = t.split(/\s+/);
+        if (parts.length > 0 && headers) {
+          // Ensure we have the right number of columns
+          while (parts.length < headers.length) parts.push('');
+          // If we have more parts than headers, the extra might be from package names with spaces
+          // For now, just take the expected number of columns
+          rows.push(parts.slice(0, headers.length));
+        }
+      }
+
+      // If no headers found, create default KiCad headers
+      if (!headers && rows.length === 0) {
+        rows.push(['Ref', 'Val', 'Package', 'PosX', 'PosY', 'Rot', 'Side']);
+      }
+
+      return rows;
+    }
+
+    // Smart parser that detects format
+    function parseFile(text, filename) {
+      // Check if it's .pos format by content or extension
+      const isPosFile = (filename && filename.toLowerCase().endsWith('.pos')) || isPosFormat(text);
+      if (isPosFile) {
+        return parsePOS(text);
+      }
+      return parseCSV(text);
+    }
+
+    function loadCSVIntoTable(tableId, csvText, filename) {
+      const rows = parseFile(csvText, filename);
+      if (!rows.length) return;
+      const headers = rows[0];
+      const $table = $('#' + tableId).empty();
+
+      const $thead = $('<thead><tr></tr></thead>');
+      headers.forEach((h, idx) => $thead.find('tr').append(createHeaderCell(h, idx, true)));
+      const $tbody = $('<tbody></tbody>');
+      for (let r = 1; r < rows.length; r++) {
+        const row = rows[r];
+        const $tr = $('<tr></tr>');
+        for (let c = 0; c < headers.length; c++) {
+          $('<td contenteditable="true"></td>').text(row[c] || '').appendTo($tr);
+        }
+        $tbody.append($tr);
+      }
+      $table.append($thead).append($tbody);
+    }
+
+    function tableToCSV(tableId) {
+      const $table = $('#' + tableId);
+      const rows = [];
+      const headerCells = [];
+      $table.find('thead th').each(function () {
+        const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
+        headerCells.push(csvEscape(label));
+      });
+      rows.push(headerCells.join(','));
+
+      $table.find('tbody tr').each(function () {
+        const cells = [];
+        $(this).children('td').each(function () {
+          cells.push(csvEscape($(this).text().trim()));
+        });
+        rows.push(cells.join(','));
+      });
+      return rows.join('\r\n');
+    }
+
+    function downloadText(filename, text) {
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function getAngleColumnIndexCSV() {
+      const $table = $('#table-csv');
+      let idx = -1;
+      $table.find('thead th').each(function (i) {
+        const label = $(this).find('.th-left').text().trim().toLowerCase() || $(this).text().trim().toLowerCase();
+        if (label === 'rot' || label.includes('rot')) { idx = i; return false; }
+      });
+      return idx;
+    }
+
+    function getAngleColumnIndexGeneric($table) {
+      let idx = -1;
+      $table.find('thead th').each(function (i) {
+        const label = $(this).find('.th-left').text().trim().toLowerCase() || $(this).text().trim().toLowerCase();
+        if (label === 'angle' || label.includes('angle')) { idx = i; return false; }
+      });
+      return idx;
+    }
+
+    function normalizeCharmhighAngle(a) {
+      let n = ((a % 360) + 360) % 360;
+      if (n === 0) return 0;
+      if (n === 90) return 90;
+      if (n === 180) return 180;
+      if (n === 270) return -90;
+      const k = Math.round(n / 90) * 90;
+      return normalizeCharmhighAngle(k);
+    }
+
+    function focusCell($cell) {
+      if (!$cell || !$cell.length) return;
+      $cell.focus();
+      const el = $cell[0];
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    /* ---------- DPV helpers ---------- */
+
+    function resetDpvModel() {
+      dpvModel = { headerLines: [], tables: {} };
+    }
+
+    function ensureDpvTable(name) {
+      if (!dpvModel.tables[name]) dpvModel.tables[name] = { header: [], rows: [] };
+      return dpvModel.tables[name];
+    }
+
+    function parseDpv(text) {
+      resetDpvModel();
+      const lines = text.replace(/\r/g,'').split('\n').filter(l => l.trim().length>0);
+      let pendingHeader = null;
+      lines.forEach(line => {
+        const t = line.trim();
+        if (!t) return;
+        if (t.startsWith('separated') || t.startsWith('FILE,') || t.startsWith('PCBFILE,') ||
+            t.startsWith('DATE,') || t.startsWith('TIME,') || t.startsWith('PANELYPE,')) {
+          dpvModel.headerLines.push(t);
+          return;
+        }
+        if (t.startsWith('Table,')) {
+          pendingHeader = parseCSV(t)[0];
+          return;
+        }
+        const arr = parseCSV(t)[0];
+        if (!arr.length) return;
+        const tableName = arr[0];
+        if (!tableName || tableName === 'Table') return;
+        const table = ensureDpvTable(tableName);
+        if (pendingHeader) {
+          table.header = pendingHeader;
+          pendingHeader = null;
+        }
+        table.rows.push(arr);
+      });
+    }
+
+    function createDpvHeaderCell(label, colIndex, sortable) {
+      const $th = $('<th></th>');
+      const $inner = $('<div class="th-inner"></div>');
+      const $left = $('<div class="th-left"></div>').text(label);
+      const $right = $('<div class="th-right"></div>');
+      if (sortable) {
+        const $up = $('<span class="sort-btn sort-up">▲</span>').attr('data-col-index', colIndex)
+          .attr('title', 'Sort ascending');
+        const $down = $('<span class="sort-btn sort-down">▼</span>').attr('data-col-index', colIndex)
+          .attr('title', 'Sort descending');
+        $right.append($up).append($down);
+      }
+      $inner.append($left).append($right);
+      $th.append($inner);
+      return $th;
+    }
+
+    function renderDpvTable(tableId, tableData, sortable) {
+      const $table = $('#' + tableId).empty();
+      if (!tableData || !tableData.header.length) {
+        $table.append('<thead><tr><th>(no DPV data)</th></tr></thead><tbody></tbody>');
+        return;
+      }
+      const $thead = $('<thead><tr></tr></thead>');
+      tableData.header.forEach((h, idx) => {
+        $thead.find('tr').append(createDpvHeaderCell(h, idx, sortable));
+      });
+      const $tbody = $('<tbody></tbody>');
+      tableData.rows.forEach(row => {
+        const $tr = $('<tr></tr>');
+        tableData.header.forEach((_, idx) => {
+          const val = row[idx] !== undefined ? row[idx] : '';
+          $('<td contenteditable="true"></td>').text(val).appendTo($tr);
+        });
+        $tbody.append($tr);
+      });
+      $table.append($thead).append($tbody);
+    }
+
+    function makeEcomponentStnoReadonly() {
+      const $table = $('#table-dpv-components');
+      const $headers = $table.find('thead th');
+      if (!$headers.length) return;
+      let stCol = -1;
+      $headers.each(function (i) {
+        const label = $(this).text().trim().toLowerCase();
+        if (label === 'stno.' || label === 'stno') { stCol = i; return false; }
+      });
+      if (stCol === -1) return;
+      $table.find('tbody tr').each(function () {
+        const $cell = $(this).children().eq(stCol);
+        $cell.removeAttr('contenteditable');
+        $cell.addClass('readonly-stno');
+      });
+    }
+
+    // Find Skip column index in Components table
+    function getSkipColumnIndex() {
+      const $table = $('#table-dpv-components');
+      let skipCol = -1;
+      $table.find('thead th').each(function (i) {
+        const label = $(this).find('.th-left').text().trim().toLowerCase() || $(this).text().trim().toLowerCase();
+        if (label === 'skip') { skipCol = i; return false; }
+      });
+      return skipCol;
+    }
+
+    // Find PHead column index in Components table
+    function getPHeadColumnIndex() {
+      const $table = $('#table-dpv-components');
+      let pheadCol = -1;
+      $table.find('thead th').each(function (i) {
+        const label = $(this).find('.th-left').text().trim().toLowerCase() || $(this).text().trim().toLowerCase();
+        if (label === 'phead') { pheadCol = i; return false; }
+      });
+      return pheadCol;
+    }
+
+    // Apply skip-row class to rows where Skip != 0
+    function updateSkipRowStyling() {
+      const skipCol = getSkipColumnIndex();
+      if (skipCol === -1) return;
+
+      $('#table-dpv-components tbody tr').each(function () {
+        const $row = $(this);
+        const skipVal = $row.children().eq(skipCol).text().trim();
+        if (skipVal !== '0' && skipVal !== '') {
+          $row.addClass('skip-row');
+        } else {
+          $row.removeClass('skip-row');
+        }
+      });
+    }
+
+    // Toggle Skip value on selected rows
+    function toggleSkipSelected() {
+      const $table = $('#table-dpv-components');
+      const $selected = $table.find('tbody tr.selected');
+      if (!$selected.length) {
+        alert('No rows selected. Click on rows to select them first.');
+        return;
+      }
+
+      const skipCol = getSkipColumnIndex();
+      if (skipCol === -1) {
+        alert('Skip column not found in Components table.');
+        return;
+      }
+
+      $selected.each(function () {
+        const $cell = $(this).children().eq(skipCol);
+        const currentVal = $cell.text().trim();
+        // Toggle: 0 -> 1, anything else -> 0
+        const newVal = (currentVal === '0' || currentVal === '') ? '1' : '0';
+        $cell.text(newVal);
+      });
+
+      updateSkipRowStyling();
+    }
+
+    function renderDpvTabsFromModel() {
+      renderDpvTable('table-dpv-components', dpvModel.tables['EComponent'] || {header:[],rows:[]}, true);
+      renderDpvTable('table-dpv-stacks', dpvModel.tables['Station'] || {header:[],rows:[]}, false);
+      renderDpvTable('table-dpv-panel-array', dpvModel.tables['Panel_Array'] || {header:[],rows:[]}, false);
+      renderDpvTable('table-dpv-panel-coord', dpvModel.tables['Panel_Coord'] || {header:[],rows:[]}, false);
+      makeEcomponentStnoReadonly();
+      updateSkipRowStyling();
+    }
+
+    function readDpvTableFromDom(tableId, tableName) {
+      const $table = $('#' + tableId);
+      const table = ensureDpvTable(tableName);
+      table.header = [];
+      table.rows = [];
+      const header = [];
+      $table.find('thead th').each(function () {
+        const left = $(this).find('.th-left').text().trim();
+        header.push(left || $(this).text().trim());
+      });
+      if (!header.length || header[0] === '(no DPV data)') return;
+      table.header = header;
+      $table.find('tbody tr').each(function () {
+        const row = [];
+        $(this).children('td').each(function () {
+          row.push($(this).text().trim());
+        });
+        if (row.join('').length > 0) table.rows.push(row);
+      });
+    }
+
+    function rebuildDpvModelFromDom() {
+      if (!dpvModel.headerLines.length) {
+        const now = new Date();
+        const pad = n => (n<10?'0'+n:''+n);
+        const dateStr = now.getFullYear() + '/' + pad(now.getMonth()+1) + '/' + pad(now.getDate());
+        const timeStr = pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds());
+        dpvModel.headerLines = [
+          'separated',
+          'FILE,job.dpv',
+          'PCBFILE,job.csv',
+          'DATE,'+dateStr,
+          'TIME,'+timeStr,
+          'PANELYPE,1'
+        ];
+      }
+      readDpvTableFromDom('table-dpv-components','EComponent');
+      readDpvTableFromDom('table-dpv-stacks','Station');
+      readDpvTableFromDom('table-dpv-panel-array','Panel_Array');
+      readDpvTableFromDom('table-dpv-panel-coord','Panel_Coord');
+    }
+
+    function dpvToText() {
+      const lines = [];
+      dpvModel.headerLines.forEach(l => lines.push(l));
+
+      const order = ['Station','ICTray','Panel_Array','Panel_Coord','EComponent','PcbCalib','CalibPoint','CalibFator'];
+      const printed = new Set();
+
+      function writeTable(name) {
+        const t = dpvModel.tables[name];
+        if (!t || !t.header.length || !t.rows.length) return;
+
+        // empty line before each table block (between sections)
+        lines.push('');
+
+        lines.push(t.header.map(csvEscape).join(','));
+        t.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
+        printed.add(name);
+      }
+
+      order.forEach(writeTable);
+      Object.keys(dpvModel.tables).forEach(name => {
+        if (!printed.has(name)) writeTable(name);
+      });
+      return lines.join('\r\n');
+    }
+
+    /* ---------- Export DPV from KiCad CSV ---------- */
+
+    function findCsvColumnIndexByName($table, wanted) {
+      wanted = wanted.toLowerCase();
+      let idx = -1;
+      $table.find('thead th').each(function (i) {
+        const label = $(this).find('.th-left').text().trim().toLowerCase() || $(this).text().trim().toLowerCase();
+        if (label === wanted) { idx = i; return false; }
+      });
+      return idx;
+    }
+
+    function generateDpvFromCsv() {
+      resetDpvModel();
+      const now = new Date();
+      const pad = n => (n<10?'0'+n:''+n);
+      const dateStr = now.getFullYear() + '/' + pad(now.getMonth()+1) + '/' + pad(now.getDate());
+      const timeStr = pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds());
+      dpvModel.headerLines = [
+        'separated',
+        'FILE,job.dpv',
+        'PCBFILE,job.csv',
+        'DATE,'+dateStr,
+        'TIME,'+timeStr,
+        'PANELYPE,1'
+      ];
+
+      const $csvTable = $('#table-csv');
+      if (!$csvTable.find('thead th').length) {
+        alert('No CSV loaded.');
+        return;
+      }
+
+      const colRef     = findCsvColumnIndexByName($csvTable, 'ref');
+      const colVal     = findCsvColumnIndexByName($csvTable, 'val');
+      const colPackage = findCsvColumnIndexByName($csvTable, 'package');
+      const colPosX    = findCsvColumnIndexByName($csvTable, 'posx');
+      const colPosY    = findCsvColumnIndexByName($csvTable, 'posy');
+      const colRot     = findCsvColumnIndexByName($csvTable, 'rot');
+
+      if (colRef === -1 || colVal === -1 || colPackage === -1 ||
+          colPosX === -1 || colPosY === -1 || colRot === -1) {
+        alert('CSV does not look like a KiCad placement export (Ref, Val, Package, PosX, PosY, Rot...).');
+        return;
+      }
+
+      // Get current offsets
+      const offsets = getOffsets();
+
+      const eHeader = ['Table','No.','ID','PHead','STNo.','DeltX','DeltY','Angle','Height','Skip','Speed','Explain','Note','Delay'];
+      const ecomp = ensureDpvTable('EComponent');
+      ecomp.header = eHeader; ecomp.rows = [];
+
+      const rows = [];
+      $csvTable.find('tbody tr').each(function () {
+        const r = [];
+        $(this).children('td').each(function () { r.push($(this).text().trim()); });
+        if (r.join('').length) rows.push(r);
+      });
+
+      rows.forEach((row, idx) => {
+        const gv = (ci) => (ci<0||ci>=row.length)?'':row[ci];
+
+        const ref  = gv(colRef);
+        const val  = gv(colVal);
+        const pkg  = gv(colPackage);
+        // Apply offsets to coordinates
+        const posx = (parseFloat(gv(colPosX)) || 0) + offsets.x;
+        const posy = (parseFloat(gv(colPosY)) || 0) + offsets.y;
+        const rotv = parseFloat(gv(colRot));
+        const angle = isNaN(rotv) ? 0 : rotv;
+
+        let note = '';
+        if (ref && pkg) note = ref + ' - ' + pkg;
+        else if (ref) note = ref;
+        else if (pkg) note = pkg;
+
+        ecomp.rows.push([
+          'EComponent',
+          String(idx),        // No.
+          String(idx+1),      // ID
+          '1',                // PHead
+          '1',                // STNo (default; can be remapped by Station)
+          String(posx),       // DeltX (with offset applied)
+          String(posy),       // DeltY (with offset applied)
+          String(angle),      // Angle
+          '0.5',              // Height
+          '0',                // Skip
+          '0',                // Speed
+          val,                // Explain (Val)
+          note,               // Note  (Ref - Package)
+          '0'                 // Delay
+        ]);
+      });
+
+      const sHeader = ['Table','No.','ID','DeltX','DeltY','FeedRates','Note','Height','Speed','Status','nPixSizeX','nPixSizeY','HeightTake','DelayTake','nPullStripSpeed','nThreshold','nVisualRadio'];
+      const station = ensureDpvTable('Station');
+      station.header = sHeader;
+      station.rows = [
+        ['Station','0','1','0','0','4','Default','0.5','0','4','0','0','0','10','85','110','200']
+      ];
+
+      const pArray = ensureDpvTable('Panel_Array');
+      pArray.header = ['Table','No.','ID','IntervalX','IntervalY','NumX','NumY'];
+      pArray.rows = [['Panel_Array','0','1','0','0','1','1']];
+
+      const pCoord = ensureDpvTable('Panel_Coord');
+      pCoord.header = ['Table','No.','ID','DeltX','DeltY'];
+      pCoord.rows = [['Panel_Coord','0','1','0','0']];
+
+      renderDpvTabsFromModel();
+    }
+
+    /* ---------- Stack List save/load ---------- */
+
+    function saveStackList() {
+      rebuildDpvModelFromDom();
+      const station = dpvModel.tables['Station'];
+      if (!station || !station.header.length || !station.rows.length) { alert('No Station data.'); return; }
+      const idIdx = station.header.indexOf('ID');
+      const noteIdx = station.header.indexOf('Note');
+      if (idIdx === -1 || noteIdx === -1) { alert('Station missing ID/Note columns.'); return; }
+
+      const lines = ['ID,Note'];
+      const seen = new Set();
+      station.rows.forEach(row => {
+        const id = (row[idIdx] || '').trim();
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        const note = (row[noteIdx] || '').trim();
+        lines.push(csvEscape(id)+','+csvEscape(note));
+      });
+      if (lines.length === 1) { alert('No usable ID/Note pairs.'); return; }
+      downloadText('stack_list.csv', lines.join('\r\n'));
+    }
+
+    // From Station(ID, Note) and EComponent(Explain=Val, STNo.) derive STNo = ID(Note=Val)
+    function rederiveStNoFromStationByNote() {
+      const station = dpvModel.tables['Station'];
+      const ecomp   = dpvModel.tables['EComponent'];
+      if (!station || !ecomp || !station.header.length || !ecomp.header.length) return;
+
+      const stNoteIdx    = station.header.indexOf('Note');
+      const stIdIdx      = station.header.indexOf('ID');
+      const ecExplainIdx = ecomp.header.indexOf('Explain'); // Explain holds KiCad Val
+
+      let ecStIdx = -1;
+      ecomp.header.forEach((h, i) => {
+        const l = (h || '').toLowerCase();
+        if (l === 'stno.' || l === 'stno') ecStIdx = i;
+      });
+
+      if (stNoteIdx === -1 || stIdIdx === -1 || ecExplainIdx === -1 || ecStIdx === -1) return;
+
+      const noteToId = {};
+      station.rows.forEach(row => {
+        const note = (row[stNoteIdx] || '').trim();
+        const id   = (row[stIdIdx]   || '').trim();
+        if (note && id) noteToId[note] = id;
+      });
+
+      ecomp.rows.forEach(row => {
+        const noteKey = (row[ecExplainIdx] || '').trim(); // match on Val
+        if (noteToId[noteKey]) row[ecStIdx] = noteToId[noteKey];
+      });
+    }
+
+    function applyStackList(csvText) {
+      rebuildDpvModelFromDom();
+      const rows = parseCSV(csvText);
+      if (!rows.length) { alert('Stack list CSV is empty.'); return; }
+      const header = rows[0].map(h => (h||'').toLowerCase());
+      let idCol = header.indexOf('id');
+      let noteCol = header.indexOf('note');
+      if (idCol === -1 && rows[0].length>=1) idCol = 0;
+      if (noteCol === -1 && rows[0].length>=2) noteCol = 1;
+
+      const station = ensureDpvTable('Station');
+      if (!station.header.length) {
+        station.header = ['Table','No.','ID','DeltX','DeltY','FeedRates','Note','Height','Speed','Status','nPixSizeX','nPixSizeY','HeightTake','DelayTake','nPullStripSpeed','nThreshold','nVisualRadio'];
+        station.rows = [];
+      }
+      const idIdx = station.header.indexOf('ID');
+      const noteIdx = station.header.indexOf('Note');
+      if (idIdx === -1 || noteIdx === -1) { alert('Station missing ID/Note columns.'); return; }
+
+      const idToNote = {};
+      for (let r = 1; r < rows.length; r++) {
+        const row = rows[r];
+        if (!row.length) continue;
+        const id = (row[idCol] || '').trim();
+        if (!id) continue;
+        const note = (row[noteCol] || '').trim();
+        idToNote[id] = note;
+      }
+
+      const existingIds = new Set();
+      station.rows.forEach(row => {
+        const id = (row[idIdx] || '').trim();
+        if (!id) return;
+        existingIds.add(id);
+        if (idToNote.hasOwnProperty(id)) row[noteIdx] = idToNote[id];
+      });
+
+      Object.keys(idToNote).forEach(id => {
+        if (!existingIds.has(id)) {
+          const no = station.rows.length;
+          const newRow = new Array(station.header.length).fill('');
+          newRow[0]='Station'; newRow[1]=String(no); newRow[2]=id;
+          newRow[3]='0'; newRow[4]='0'; newRow[5]='4';
+          newRow[noteIdx]=idToNote[id];
+          if (station.header.length>7) newRow[7]='0.5';
+          if (station.header.length>8) newRow[8]='0';
+          if (station.header.length>9) newRow[9]='4';
+          if (station.header.length>13) newRow[13]='10';
+          if (station.header.length>14) newRow[14]='85';
+          if (station.header.length>15) newRow[15]='110';
+          if (station.header.length>16) newRow[16]='200';
+          station.rows.push(newRow);
+        }
+      });
+
+      rederiveStNoFromStationByNote();
+      renderDpvTabsFromModel();
+      currentTab = 'stacks';
+      $('.tab-btn').removeClass('active');
+      $('.tab-btn[data-tab="stacks"]').addClass('active');
+      $('.tab-content').removeClass('active');
+      $('#tab-stacks').addClass('active');
+      alert('Stack list applied; Station updated; STNo. re-derived using component values (Val).');
+    }
+
+    /* ---------- ID ↔ STNo sync (direct edits on Material Stacks) ---------- */
+
+    function updateComponentsStNo(oldId, newId) {
+      if (!oldId || !newId || oldId === newId) return;
+      const $comp = $('#table-dpv-components');
+      const $h = $comp.find('thead th');
+      let stCol = -1;
+      $h.each(function (i) {
+        const label = $(this).text().trim().toLowerCase();
+        if (label === 'stno.' || label === 'stno') { stCol = i; return false; }
+      });
+      if (stCol === -1) return;
+      $comp.find('tbody tr').each(function () {
+        const $c = $(this).children().eq(stCol);
+        if ($c.text().trim() === oldId) $c.text(newId);
+      });
+      makeEcomponentStnoReadonly();
+    }
+
+    $(document).on('focusin', '#table-dpv-stacks tbody td', function () {
+      const $cell = $(this);
+      const $table = $('#table-dpv-stacks');
+      const colIndex = $cell.index();
+      let idCol = -1;
+      $table.find('thead th').each(function (i) {
+        if ($(this).text().trim().toLowerCase() === 'id') { idCol = i; return false; }
+      });
+      if (colIndex === idCol) {
+        $cell.data('old-id', $cell.text().trim());
+      }
+    });
+
+    $(document).on('blur', '#table-dpv-stacks tbody td', function () {
+      const $cell = $(this);
+      const $table = $('#table-dpv-stacks');
+      const colIndex = $cell.index();
+      let idCol = -1;
+      $table.find('thead th').each(function (i) {
+        if ($(this).text().trim().toLowerCase() === 'id') { idCol = i; return false; }
+      });
+      if (idCol === -1 || colIndex !== idCol) return;
+
+      const oldId = $cell.data('old-id') || $cell.text().trim();
+      let newIdRaw = $cell.text().trim();
+      let newIdNum = parseInt(newIdRaw,10);
+      if (isNaN(newIdNum) || newIdNum <= 0) {
+        const used = new Set();
+        $table.find('tbody tr').each(function () {
+          const v = $(this).children().eq(idCol).text().trim();
+          if (v) used.add(v);
+        });
+        let candidate = 1;
+        while (used.has(String(candidate))) candidate++;
+        newIdNum = candidate;
+      }
+      const newId = String(newIdNum);
+      $cell.text(newId);
+
+      const usedIds = new Set([newId]);
+      $table.find('tbody tr').each(function () {
+        const $row = $(this);
+        const $c = $row.children().eq(idCol);
+        if ($c[0] === $cell[0]) return;
+        let v = $c.text().trim();
+        if (!v) return;
+        if (usedIds.has(v)) {
+          let cand = 1;
+          while (usedIds.has(String(cand))) cand++;
+          v = String(cand);
+          $c.text(v);
+        }
+        usedIds.add(v);
+      });
+
+      updateComponentsStNo(oldId, newId);
+    });
+
+    /* ---------- INITIAL TABLES ---------- */
+
+    createDefaultCsvTable();
+    renderDpvTabsFromModel();
+
+    /* ---------- Tabs ---------- */
+
+    $('.tab-btn').on('click', function () {
+      const tab = $(this).data('tab');
+      if (tab === currentTab) return;
+      currentTab = tab;
+      $('.tab-btn').removeClass('active');
+      $(this).addClass('active');
+      $('.tab-content').removeClass('active');
+      $('#tab-' + tab).addClass('active');
+    });
+
+    /* ---------- Row selection ---------- */
+
+    let lastClickedRow = null; // Track last clicked row for shift-select
+
+    $(document).on('click', 'table.data-grid tbody tr', function (e) {
+      if(!$(e.target).is('td')) return;
+
+      const $table = $(this).closest('table.data-grid');
+      const $rows = $table.find('tbody tr');
+      const $this = $(this);
+      const thisIndex = $rows.index($this);
+
+      if (e.shiftKey && lastClickedRow !== null) {
+        // Shift+click: select range
+        const lastIndex = $rows.index(lastClickedRow);
+        if (lastIndex !== -1) {
+          const start = Math.min(thisIndex, lastIndex);
+          const end = Math.max(thisIndex, lastIndex);
+          if(!e.ctrlKey && !e.metaKey) {
+            $rows.removeClass('selected');
+          }
+          for (let i = start; i <= end; i++) {
+            $rows.eq(i).addClass('selected');
+          }
+        }
+      } else if (e.ctrlKey || e.metaKey) {
+        // Ctrl+click: toggle this row, keep others
+        $this.toggleClass('selected');
+        lastClickedRow = $this;
+      } else {
+        // Regular click: select only this row
+        $rows.removeClass('selected');
+        $this.addClass('selected');
+        lastClickedRow = $this;
+      }
+    });
+
+    /* ---------- Row toolbars ---------- */
+
+    $(document).on('click', '.btn-add-row', function () {
+      const tableId = $(this).closest('.row-tools').data('target-table');
+      if (tableId) addEmptyRow(tableId);
+    });
+    $(document).on('click', '.btn-clear-rows', function () {
+      const tableId = $(this).closest('.row-tools').data('target-table');
+      if (tableId && confirm('Clear all rows (keep header) in this table?')) clearRows(tableId);
+    });
+    $(document).on('click', '.btn-delete-rows', function () {
+      const tableId = $(this).closest('.row-tools').data('target-table');
+      if (!tableId) return;
+      const $table = $('#' + tableId);
+      const $rows = $table.find('tbody tr.selected');
+      if (!$rows.length) { alert('No rows selected.'); return; }
+      if (!confirm('Delete ' + $rows.length + ' selected row(s)?')) return;
+      $rows.remove();
+    });
+
+    /* ---------- Sorting (CSV + Components) ---------- */
+
+    function sortTable(tableId, colIndex, asc) {
+      const $table = $('#' + tableId);
+      const $tbody = $table.find('tbody');
+      const rows = $tbody.find('tr').get();
+      rows.sort((a,b) => {
+        const va = $(a).children().eq(colIndex).text().trim();
+        const vb = $(b).children().eq(colIndex).text().trim();
+        const na = parseFloat(va), nb = parseFloat(vb);
+        let cmp;
+        if (!isNaN(na) && !isNaN(nb)) cmp = na - nb;
+        else cmp = va.localeCompare(vb, undefined, {numeric:true,sensitivity:'base'});
+        return asc ? cmp : -cmp;
+      });
+      rows.forEach(r => $tbody.append(r));
+    }
+    $(document).on('click', '#table-csv thead .sort-up, #table-csv thead .sort-down', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      const col = parseInt($(this).attr('data-col-index'),10);
+      sortTable('table-csv', col, $(this).hasClass('sort-up'));
+    });
+    $(document).on('click', '#table-dpv-components thead .sort-up, #table-dpv-components thead .sort-down', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      const col = parseInt($(this).attr('data-col-index'),10);
+      sortTable('table-dpv-components', col, $(this).hasClass('sort-up'));
+    });
+
+    /* ---------- Keyboard nav + rotation ---------- */
+
+    $(document).on('keydown', function (e) {
+      const key = e.key;
+      const isArrow = ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(key);
+      if (!isArrow && key!=='Enter' && key!=='Tab') return;
+      const active = document.activeElement;
+      const $active = $(active);
+      if (!$active.is('td[contenteditable]')) return;
+
+      const $table = $active.closest('table.data-grid');
+      if (!$table.length) return;
+      const $row = $active.closest('tr');
+      const rowIndex = $row.index();
+      const colIndex = $active.index();
+      const $rows = $table.find('tbody tr');
+      const colCount = $table.find('thead th').length;
+
+      // ROTATION (Ctrl + arrows) on CSV / Components Angle/Rot
+      if (isArrow && e.ctrlKey) {
+        const tableId = $table.attr('id');
+        let angleCol = -1;
+        if (tableId === 'table-csv') angleCol = getAngleColumnIndexCSV();
+        else if (tableId === 'table-dpv-components') angleCol = getAngleColumnIndexGeneric($table);
+        if (angleCol === -1 || colIndex !== angleCol) return;
+        e.preventDefault();
+        let delta = 0;
+        if (key==='ArrowLeft') delta = 90;
+        else if (key==='ArrowRight') delta = -90;
+        else if (key==='ArrowUp' || key==='ArrowDown') delta = 180;
+
+        if (e.shiftKey) {
+          $table.find('tbody tr').each(function () {
+            const $c = $(this).children().eq(angleCol);
+            let v = parseInt($c.text().trim(),10); if (isNaN(v)) v=0;
+            $c.text(normalizeCharmhighAngle(v+delta));
+          });
+        } else {
+          let v = parseInt($active.text().trim(),10); if (isNaN(v)) v=0;
+          $active.text(normalizeCharmhighAngle(v+delta));
+        }
+        return;
+      }
+      if (e.ctrlKey) return;
+
+      if (isArrow) {
+        e.preventDefault();
+        let tr = rowIndex, tc = colIndex;
+        if (key==='ArrowLeft' && tc>0) tc--;
+        if (key==='ArrowRight' && tc<colCount-1) tc++;
+        if (key==='ArrowUp' && tr>0) tr--;
+        if (key==='ArrowDown' && tr<$rows.length-1) tr++;
+        const $tRow = $rows.eq(tr);
+        focusCell($tRow.children().eq(tc));
+        return;
+      }
+
+      if (key==='Enter') {
+        e.preventDefault();
+        let tr = rowIndex, tc = colIndex;
+        if (e.shiftKey) {
+          if (tr>0) tr--;
+        } else {
+          if (tr === $rows.length-1) addEmptyRow($table.attr('id'));
+          const $newRows = $table.find('tbody tr');
+          if (tr < $newRows.length-1) tr++;
+        }
+        const $tRow = $table.find('tbody tr').eq(tr);
+        focusCell($tRow.children().eq(tc));
+        return;
+      }
+
+      if (key==='Tab') {
+        e.preventDefault();
+        let tr = rowIndex, tc = colIndex;
+        if (e.shiftKey) {
+          if (tc>0) tc--; else if (tr>0) { tr--; tc = colCount-1; }
+        } else {
+          if (tc<colCount-1) tc++;
+          else {
+            if (tr === $rows.length-1) addEmptyRow($table.attr('id'));
+            const $newRows = $table.find('tbody tr');
+            if (tr < $newRows.length-1) { tr++; tc=0; }
+          }
+        }
+        const $tRow = $table.find('tbody tr').eq(tr);
+        focusCell($tRow.children().eq(tc));
+        return;
+      }
+    });
+
+    /* ---------- Toolbar buttons ---------- */
+
+    $('#btn-load-csv').on('click', () => { $('#file-input-csv').val('').click(); });
+    $('#file-input-csv').on('change', e => {
+      const file = e.target.files[0]; if (!file) return;
+      const filename = file.name;
+      const r = new FileReader();
+      r.onload = evt => {
+        loadCSVIntoTable('table-csv', evt.target.result, filename);
+        currentTab='csv';
+        $('.tab-btn').removeClass('active');
+        $('.tab-btn[data-tab="csv"]').addClass('active');
+        $('.tab-content').removeClass('active');
+        $('#tab-csv').addClass('active');
+      };
+      r.readAsText(file);
+    });
+
+    $('#btn-save-csv').on('click', () => {
+      const offsets = getOffsets();
+      if (offsets.x === 0 && offsets.y === 0) {
+        downloadText('placement.csv', tableToCSV('table-csv'));
+        return;
+      }
+
+      // Apply offsets to CSV output without modifying the displayed table
+      const $table = $('#table-csv');
+      const colPosX = findCsvColumnIndexByName($table, 'posx');
+      const colPosY = findCsvColumnIndexByName($table, 'posy');
+
+      if (colPosX === -1 || colPosY === -1) {
+        downloadText('placement.csv', tableToCSV('table-csv'));
+        return;
+      }
+
+      // Build CSV with offsets applied
+      const rows = [];
+      const headerCells = [];
+      $table.find('thead th').each(function () {
+        const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
+        headerCells.push(csvEscape(label));
+      });
+      rows.push(headerCells.join(','));
+
+      $table.find('tbody tr').each(function () {
+        const cells = [];
+        $(this).children('td').each(function (idx) {
+          let val = $(this).text().trim();
+          // Apply offset to coordinate columns
+          if (idx === colPosX && offsets.x !== 0) {
+            val = String((parseFloat(val) || 0) + offsets.x);
+          } else if (idx === colPosY && offsets.y !== 0) {
+            val = String((parseFloat(val) || 0) + offsets.y);
+          }
+          cells.push(csvEscape(val));
+        });
+        rows.push(cells.join(','));
+      });
+
+      downloadText('placement.csv', rows.join('\r\n'));
+    });
+
+    $('#btn-load-dpv').on('click', () => { $('#file-input-dpv').val('').click(); });
+    $('#file-input-dpv').on('change', e => {
+      const file = e.target.files[0]; if (!file) return;
+      const r = new FileReader();
+      r.onload = evt => {
+        parseDpv(evt.target.result);
+        renderDpvTabsFromModel();
+        currentTab='components';
+        $('.tab-btn').removeClass('active');
+        $('.tab-btn[data-tab="components"]').addClass('active');
+        $('.tab-content').removeClass('active');
+        $('#tab-components').addClass('active');
+        if (confirm('DPV loaded. Export a Stack List (Station ID/Note CSV) now?')) saveStackList();
+      };
+      r.readAsText(file);
+    });
+
+    $('#btn-export-dpv').on('click', () => {
+      const offsets = getOffsets();
+      generateDpvFromCsv();
+      currentTab='components';
+      $('.tab-btn').removeClass('active');
+      $('.tab-btn[data-tab="components"]').addClass('active');
+      $('.tab-content').removeClass('active');
+      $('#tab-components').addClass('active');
+      let msg = 'DPV generated from KiCad CSV and loaded into DPV tabs.';
+      if (offsets.x !== 0 || offsets.y !== 0) {
+        msg += '\n\nOffsets applied:\n  X: ' + (offsets.x >= 0 ? '+' : '') + offsets.x + ' mm\n  Y: ' + (offsets.y >= 0 ? '+' : '') + offsets.y + ' mm';
+      }
+      alert(msg);
+    });
+
+    $('#btn-save-dpv').on('click', () => {
+      rebuildDpvModelFromDom();
+
+      // Apply offsets to a copy of the data for saving (don't modify displayed data)
+      const offsets = getOffsets();
+      if ((offsets.x !== 0 || offsets.y !== 0) && dpvModel.tables['EComponent']) {
+        const ecomp = dpvModel.tables['EComponent'];
+        const deltXIdx = ecomp.header.indexOf('DeltX');
+        const deltYIdx = ecomp.header.indexOf('DeltY');
+        if (deltXIdx !== -1 && deltYIdx !== -1) {
+          ecomp.rows.forEach(row => {
+            if (offsets.x !== 0) {
+              row[deltXIdx] = String((parseFloat(row[deltXIdx]) || 0) + offsets.x);
+            }
+            if (offsets.y !== 0) {
+              row[deltYIdx] = String((parseFloat(row[deltYIdx]) || 0) + offsets.y);
+            }
+          });
+        }
+      }
+
+      const text = dpvToText();
+      let filename = 'job.dpv';
+      const fileLine = dpvModel.headerLines.find(l => l.startsWith('FILE,'));
+      if (fileLine) {
+        const parts = fileLine.split(',');
+        if (parts[1]) filename = parts[1].trim();
+      }
+      downloadText(filename, text);
+
+      // Restore the displayed data (re-read from DOM to undo offset changes to model)
+      if (offsets.x !== 0 || offsets.y !== 0) {
+        rebuildDpvModelFromDom();
+      }
+    });
+
+    $('#btn-save-stacklist').on('click', saveStackList);
+    $('#btn-load-stacklist').on('click', () => { $('#file-input-stacklist').val('').click(); });
+    $('#file-input-stacklist').on('change', e => {
+      const file = e.target.files[0]; if (!file) return;
+      const r = new FileReader();
+      r.onload = evt => applyStackList(evt.target.result);
+      r.readAsText(file);
+    });
+
+    $('#btn-toggle-skip').on('click', toggleSkipSelected);
+
+    // Update skip styling when Skip cell is edited
+    $(document).on('blur', '#table-dpv-components tbody td', function () {
+      const skipCol = getSkipColumnIndex();
+      if (skipCol === -1) return;
+      if ($(this).index() === skipCol) {
+        updateSkipRowStyling();
+      }
+    });
+
+    // Toggle Skip or PHead on double-click
+    $(document).on('dblclick', '#table-dpv-components tbody td', function (e) {
+      const colIdx = $(this).index();
+      const skipCol = getSkipColumnIndex();
+      const pheadCol = getPHeadColumnIndex();
+      const $cell = $(this);
+      const currentVal = $cell.text().trim();
+
+      if (colIdx === skipCol) {
+        e.preventDefault();
+        $cell.text((currentVal === '0' || currentVal === '') ? '1' : '0');
+        updateSkipRowStyling();
+      } else if (colIdx === pheadCol) {
+        e.preventDefault();
+        $cell.text((currentVal === '1' || currentVal === '') ? '2' : '1');
+      }
+    });
+
+    // Toggle Skip or PHead on spacebar
+    $(document).on('keydown', '#table-dpv-components tbody td', function (e) {
+      if (e.key !== ' ') return;
+      const colIdx = $(this).index();
+      const skipCol = getSkipColumnIndex();
+      const pheadCol = getPHeadColumnIndex();
+      const $cell = $(this);
+      const currentVal = $cell.text().trim();
+
+      if (colIdx === skipCol) {
+        e.preventDefault();
+        $cell.text((currentVal === '0' || currentVal === '') ? '1' : '0');
+        updateSkipRowStyling();
+      } else if (colIdx === pheadCol) {
+        e.preventDefault();
+        $cell.text((currentVal === '1' || currentVal === '') ? '2' : '1');
+      }
+    });
+
+    /* ---------- Help modal (tab-aware) ---------- */
+
+    const $helpModal = $('#help-modal');
+    const $helpBody = $('#help-body');
+
+    function getHelpHtmlForTab(tab) {
+      if (tab === 'csv') {
+        return `
+          <h3>CSV/POS Tab – KiCad Placement (v${APP_VERSION})</h3>
+          <p>Load the placement CSV or POS file from KiCad:</p>
+          <ul>
+            <li><code>File → Fabrication Outputs → Component Placement</code></li>
+          </ul>
+          <p>Expected columns:</p>
+          <ul>
+            <li><strong>Ref</strong> → EComponent.<strong>Note</strong> (combined with Package)</li>
+            <li><strong>Val</strong> → EComponent.<strong>Explain</strong></li>
+            <li><strong>Package</strong> → appended to Ref in EComponent.<strong>Note</strong> as <code>Ref - Package</code></li>
+            <li><strong>PosX</strong> → EComponent.<strong>DeltX</strong></li>
+            <li><strong>PosY</strong> → EComponent.<strong>DeltY</strong></li>
+            <li><strong>Rot</strong> → EComponent.<strong>Angle</strong></li>
+            <li><strong>Side</strong> → currently ignored</li>
+          </ul>
+          <h3>X/Y Offset Feature</h3>
+          <ul>
+            <li>Enter offset values in the toolbar (in mm).</li>
+            <li>Offsets are applied when you <strong>Save CSV</strong> or <strong>Export DPV</strong>.</li>
+            <li>The displayed data remains unchanged – only the saved file has offsets applied.</li>
+            <li>Positive X offset shifts parts to the right; positive Y shifts parts up.</li>
+            <li>Use this to compensate for machine calibration errors.</li>
+          </ul>
+          <h3>Editing & Rotation</h3>
+          <ul>
+            <li>Click any cell to edit in place.</li>
+            <li>Select a <strong>Rot</strong> cell, then:
+              <ul>
+                <li><strong>Ctrl + ←</strong>: rotate +90°</li>
+                <li><strong>Ctrl + →</strong>: rotate -90°</li>
+                <li><strong>Ctrl + ↑/↓</strong>: rotate 180°</li>
+                <li><strong>Ctrl + Shift + arrows</strong>: rotate <em>all</em> Rot values in the table</li>
+              </ul>
+            </li>
+            <li>Arrow keys / Tab / Enter: Excel-style navigation between cells.</li>
+          </ul>
+        `;
+      } else if (tab === 'components') {
+        return `
+          <h3>Components Tab – EComponent (v${APP_VERSION})</h3>
+          <p>This tab shows the DPV <strong>EComponent</strong> table generated from the CSV.</p>
+          <ul>
+            <li><strong>Explain</strong> column comes from KiCad <strong>Val</strong>.</li>
+            <li><strong>Note</strong> column comes from <code>Ref - Package</code>.</li>
+            <li><strong>DeltX / DeltY / Angle</strong> come from <strong>PosX / PosY / Rot</strong>.</li>
+            <li><strong>STNo.</strong> is read-only here and is driven by material stacks (Station IDs).</li>
+            <li><strong>Skip</strong> column: 0 = place, 1 = do not place.</li>
+          </ul>
+          <h3>Skip (Do Not Place)</h3>
+          <ul>
+            <li>Click rows to select them (highlighted in blue).</li>
+            <li>Click <strong>Toggle Skip</strong> to flip the Skip value (0↔1).</li>
+            <li>Skipped components appear <span style="text-decoration:line-through;color:#9ca3af;">crossed out in red</span>.</li>
+            <li>You can also edit the Skip column directly (0 or 1).</li>
+          </ul>
+          <h3>X/Y Offset Feature</h3>
+          <ul>
+            <li>Offsets are applied when you <strong>Save DPV</strong>.</li>
+            <li>The displayed data remains unchanged – only the saved file has offsets applied.</li>
+            <li>This lets you save multiple versions with different offsets from the same source.</li>
+          </ul>
+          <h3>Editing & Rotation</h3>
+          <ul>
+            <li>You can edit most cells directly except STNo.</li>
+            <li>Select an <strong>Angle</strong> cell, then:
+              <ul>
+                <li><strong>Ctrl + ←</strong>: rotate +90°</li>
+                <li><strong>Ctrl + →</strong>: rotate -90°</li>
+                <li><strong>Ctrl + ↑/↓</strong>: rotate 180°</li>
+                <li><strong>Ctrl + Shift + arrows</strong>: rotate <em>all</em> Angle values in this table</li>
+              </ul>
+            </li>
+            <li>Header ▲ / ▼: sort the Components table by that column.</li>
+          </ul>
+        `;
+      } else if (tab === 'stacks') {
+        return `
+          <h3>Material Stacks Tab – Station (v${APP_VERSION})</h3>
+          <p>This tab holds the DPV <strong>Station</strong> table (material stacks / feeders).</p>
+          <ul>
+            <li><strong>ID</strong> = Station ID (feeder number). Must be unique.</li>
+            <li><strong>Note</strong> = human label (e.g. resistor value, footprint family, etc.).</li>
+            <li>When you edit an <strong>ID</strong>, any duplicate IDs are automatically renumbered.</li>
+            <li>Changing an ID updates Components.<strong>STNo.</strong> everywhere that ID is used.</li>
+          </ul>
+          <h3>Stack List CSV</h3>
+          <ul>
+            <li><strong>Save Stack List</strong>: exports <code>ID,Note</code> pairs from Station to a small CSV.</li>
+            <li><strong>Load Stack List</strong>: imports <code>ID,Note</code> pairs and:
+              <ul>
+                <li>Updates Station rows.</li>
+                <li>Re-derives Components.<strong>STNo.</strong> by matching Station.<strong>Note</strong> to EComponent.<strong>Explain</strong> (KiCad Val).</li>
+              </ul>
+            </li>
+          </ul>
+        `;
+      } else if (tab === 'panel') {
+        return `
+          <h3>Panel List Tab – Panel_Array & Panel_Coord (v${APP_VERSION})</h3>
+          <p>These tables describe panelization information for the DPV file.</p>
+          <ul>
+            <li><strong>Panel_Array</strong>: number of boards in X/Y and spacing.</li>
+            <li><strong>Panel_Coord</strong>: origin offsets for panels (e.g. top-left panel location).</li>
+          </ul>
+          <p>The app inserts a basic single-panel default when exporting DPV from CSV, which you can edit here.</p>
+          <h3>General Editing</h3>
+          <ul>
+            <li>Use the row controls above each table to add / delete / clear rows.</li>
+            <li>Cells are all editable; DPV save will include your changes.</li>
+          </ul>
+        `;
+      }
+      return `
+        <h3>General Help (v${APP_VERSION})</h3>
+        <p>Select a tab first (CSV, Components, Material Stacks, Panel List) and press Help again for context-specific details.</p>
+      `;
+    }
+
+    function showHelp(){
+      $helpBody.html(getHelpHtmlForTab(currentTab));
+      $helpModal.addClass('visible');
+    }
+    function hideHelp(){ $helpModal.removeClass('visible'); }
+
+    $('#btn-help').on('click', showHelp);
+    $('#help-close,#help-close-footer').on('click', hideHelp);
+    $helpModal.on('click', e => { if (e.target===e.currentTarget) hideHelp(); });
+    $(document).on('keydown', e => { if (e.key==='Escape' && $helpModal.hasClass('visible')) hideHelp(); });
+  });
+</script>
+</body>
+</html>
