@@ -282,6 +282,31 @@
       cursor: default !important;
     }
 
+    /* Checkbox select column */
+    table.data-grid th.select-col,
+    table.data-grid td.select-col {
+      width: 32px;
+      min-width: 32px;
+      max-width: 32px;
+      text-align: center;
+      padding: 2px 4px;
+      cursor: pointer;
+    }
+    table.data-grid th.select-col {
+      font-size: 10px;
+      font-weight: 600;
+    }
+    table.data-grid td.select-col input[type="checkbox"] {
+      cursor: pointer;
+      width: 14px;
+      height: 14px;
+    }
+    table.data-grid th.select-col input[type="checkbox"] {
+      cursor: pointer;
+      width: 14px;
+      height: 14px;
+    }
+
     /* Skipped components (Skip=1) */
     table.data-grid tbody tr.skip-row {
       background: #fef2f2 !important;
@@ -739,9 +764,6 @@
       </div>
     </div>
     <div class="modal-footer">
-      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#6b7280;">
-        <input type="checkbox" id="workflow-dont-show"> Don't show this on startup
-      </label>
       <span style="flex:1;"></span>
       <button id="workflow-close-footer" class="btn small">Got it!</button>
     </div>
@@ -750,8 +772,8 @@
 
 <!-- Hidden file inputs -->
 <input id="file-input-csv" type="file" accept=".csv,.pos,text/csv,text/plain" style="display:none">
-<input id="file-input-dpv" type="file" accept=".dpv,text/plain" style="display:none">
-<input id="file-input-stacklist" type="file" accept=".csv,text/csv,text/plain" style="display:none">
+<input id="file-input-dpv" type="file" accept=".dpv,.dpvx,text/plain" style="display:none">
+<input id="file-input-stacklist" type="file" accept=".dpvx,.dpv,.csv,text/csv,text/plain" style="display:none">
 <input id="file-input-library" type="file" accept=".json,application/json" style="display:none">
 
 <script>
@@ -801,22 +823,40 @@
     }
 
     // Load file with dialog (File System Access API) or fallback to input
+    // The order of extensions in 'accept' determines which file type appears first (default)
     async function loadFileWithDialog(accept, inputId) {
       if (hasFileSystemAccess) {
         try {
           const types = [];
-          if (accept.includes('.csv') || accept.includes('.pos')) {
-            types.push({
-              description: 'Placement files',
-              accept: { 'text/plain': ['.csv', '.pos'] }
-            });
+          // Check for DPV/DPVx first if it appears first in accept string
+          const dpvFirst = accept.indexOf('.dpv') < accept.indexOf('.csv') || !accept.includes('.csv');
+
+          const addDpvType = () => {
+            if (accept.includes('.dpv') || accept.includes('.dpvx')) {
+              types.push({
+                description: 'DPV/DPVx files',
+                accept: { 'text/plain': ['.dpv', '.dpvx'] }
+              });
+            }
+          };
+          const addCsvType = () => {
+            if (accept.includes('.csv') || accept.includes('.pos')) {
+              types.push({
+                description: 'Placement files',
+                accept: { 'text/plain': ['.csv', '.pos'] }
+              });
+            }
+          };
+
+          // Add types in order based on accept string
+          if (dpvFirst) {
+            addDpvType();
+            addCsvType();
+          } else {
+            addCsvType();
+            addDpvType();
           }
-          if (accept.includes('.dpv')) {
-            types.push({
-              description: 'DPV files',
-              accept: { 'text/plain': ['.dpv'] }
-            });
-          }
+
           if (accept.includes('.json')) {
             types.push({
               description: 'JSON files',
@@ -905,6 +945,8 @@
       const $table = $('#table-csv').empty();
       const headers = ['Ref','Val','Package','PosX','PosY','Rot','Side'];
       const $thead = $('<thead><tr></tr></thead>');
+      // Add checkbox column header
+      $thead.find('tr').append('<th class="select-col"><input type="checkbox" class="select-all-checkbox" title="Select all"></th>');
       headers.forEach((h, idx) => $thead.find('tr').append(createHeaderCell(h, idx, true)));
       const $tbody = $('<tbody></tbody>');
       $table.append($thead).append($tbody);
@@ -921,7 +963,14 @@
       const colCount = $table.find('thead th').length;
       if (!colCount) return;
       const $tr = $('<tr></tr>');
-      for (let i = 0; i < colCount; i++) {
+      // Check if table has checkbox column
+      const hasCheckboxCol = $table.find('thead th.select-col').length > 0;
+      if (hasCheckboxCol) {
+        $tr.append('<td class="select-col"><input type="checkbox" class="row-select-checkbox"></td>');
+      }
+      // Add data cells (minus checkbox column if present)
+      const dataCols = hasCheckboxCol ? colCount - 1 : colCount;
+      for (let i = 0; i < dataCols; i++) {
         $('<td contenteditable="true"></td>').appendTo($tr);
       }
       $table.find('tbody').append($tr);
@@ -933,19 +982,24 @@
       const $headers = $table.find('thead th');
       if (!$headers.length) return;
 
-      // Get header names to find column indices
+      // Check if table has checkbox column
+      const hasCheckboxCol = $table.find('thead th.select-col').length > 0;
+
+      // Get header names to find column indices (skip checkbox column)
       const headers = [];
       $headers.each(function () {
+        if ($(this).hasClass('select-col')) return;
         const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
         headers.push(label.toLowerCase());
       });
 
-      // Find existing IDs to determine next unique ID
+      // Find existing IDs to determine next unique ID (account for checkbox column)
       const idCol = headers.indexOf('id');
+      const idColDom = hasCheckboxCol ? idCol + 1 : idCol;
       const usedIds = new Set();
       $table.find('tbody tr').each(function () {
         if (idCol !== -1) {
-          const idVal = $(this).children().eq(idCol).text().trim();
+          const idVal = $(this).children().eq(idColDom).text().trim();
           if (idVal) usedIds.add(parseInt(idVal, 10) || 0);
         }
       });
@@ -982,6 +1036,10 @@
       };
 
       const $tr = $('<tr></tr>');
+      // Add checkbox cell if needed
+      if (hasCheckboxCol) {
+        $tr.append('<td class="select-col"><input type="checkbox" class="row-select-checkbox"></td>');
+      }
       headers.forEach(h => {
         const val = defaults[h] !== undefined ? defaults[h] : '';
         $('<td contenteditable="true"></td>').text(val).appendTo($tr);
@@ -997,20 +1055,26 @@
       const $tbody = $table.find('tbody');
       if (!$tbody.length) return;
 
-      // Find ID column index
+      // Check if table has checkbox column
+      const hasCheckboxCol = $table.find('thead th.select-col').length > 0;
+      const offset = hasCheckboxCol ? 1 : 0;
+
+      // Find ID column index (skip checkbox column)
       const headers = [];
       $table.find('thead th').each(function () {
+        if ($(this).hasClass('select-col')) return;
         const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
         headers.push(label.toLowerCase());
       });
       const idCol = headers.indexOf('id');
       if (idCol === -1) return;
+      const idColDom = idCol + offset;
 
       // Get all rows and sort by ID
       const $rows = $tbody.find('tr').toArray();
       $rows.sort((a, b) => {
-        const aId = parseInt($(a).children().eq(idCol).text().trim(), 10) || 0;
-        const bId = parseInt($(b).children().eq(idCol).text().trim(), 10) || 0;
+        const aId = parseInt($(a).children().eq(idColDom).text().trim(), 10) || 0;
+        const bId = parseInt($(b).children().eq(idColDom).text().trim(), 10) || 0;
         return aId - bId;
       });
 
@@ -1020,8 +1084,9 @@
       // Update No. column to reflect new order
       const noCol = headers.indexOf('no.');
       if (noCol !== -1) {
+        const noColDom = noCol + offset;
         $tbody.find('tr').each(function (idx) {
-          $(this).children().eq(noCol).text(String(idx));
+          $(this).children().eq(noColDom).text(String(idx));
         });
       }
     }
@@ -1130,11 +1195,15 @@
       const $table = $('#' + tableId).empty();
 
       const $thead = $('<thead><tr></tr></thead>');
+      // Add select checkbox column header
+      $thead.find('tr').append('<th class="select-col"><input type="checkbox" class="select-all-checkbox" title="Select all"></th>');
       headers.forEach((h, idx) => $thead.find('tr').append(createHeaderCell(h, idx, true)));
       const $tbody = $('<tbody></tbody>');
       for (let r = 1; r < rows.length; r++) {
         const row = rows[r];
         const $tr = $('<tr></tr>');
+        // Add select checkbox cell
+        $tr.append('<td class="select-col"><input type="checkbox" class="row-select-checkbox"></td>');
         for (let c = 0; c < headers.length; c++) {
           $('<td contenteditable="true"></td>').text(row[c] || '').appendTo($tr);
         }
@@ -1148,6 +1217,7 @@
       const rows = [];
       const headerCells = [];
       $table.find('thead th').each(function () {
+        if ($(this).hasClass('select-col')) return; // Skip checkbox column
         const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
         headerCells.push(csvEscape(label));
       });
@@ -1156,6 +1226,7 @@
       $table.find('tbody tr').each(function () {
         const cells = [];
         $(this).children('td').each(function () {
+          if ($(this).hasClass('select-col')) return; // Skip checkbox column
           cells.push(csvEscape($(this).text().trim()));
         });
         rows.push(cells.join(','));
@@ -1279,12 +1350,16 @@
         return;
       }
       const $thead = $('<thead><tr></tr></thead>');
+      // Add select checkbox column header
+      $thead.find('tr').append('<th class="select-col"><input type="checkbox" class="select-all-checkbox" title="Select all"></th>');
       tableData.header.forEach((h, idx) => {
         $thead.find('tr').append(createDpvHeaderCell(h, idx, sortable));
       });
       const $tbody = $('<tbody></tbody>');
       tableData.rows.forEach(row => {
         const $tr = $('<tr></tr>');
+        // Add select checkbox cell
+        $tr.append('<td class="select-col"><input type="checkbox" class="row-select-checkbox"></td>');
         tableData.header.forEach((_, idx) => {
           const val = row[idx] !== undefined ? row[idx] : '';
           $('<td contenteditable="true"></td>').text(val).appendTo($tr);
@@ -1311,22 +1386,24 @@
       });
     }
 
-    // Find Skip column index in Components table
+    // Find Skip column index in Components table (accounts for checkbox column at index 0)
     function getSkipColumnIndex() {
       const $table = $('#table-dpv-components');
       let skipCol = -1;
       $table.find('thead th').each(function (i) {
+        if ($(this).hasClass('select-col')) return; // Skip checkbox column
         const label = $(this).find('.th-left').text().trim().toLowerCase() || $(this).text().trim().toLowerCase();
         if (label === 'skip') { skipCol = i; return false; }
       });
       return skipCol;
     }
 
-    // Find PHead column index in Components table
+    // Find PHead column index in Components table (accounts for checkbox column at index 0)
     function getPHeadColumnIndex() {
       const $table = $('#table-dpv-components');
       let pheadCol = -1;
       $table.find('thead th').each(function (i) {
+        if ($(this).hasClass('select-col')) return; // Skip checkbox column
         const label = $(this).find('.th-left').text().trim().toLowerCase() || $(this).text().trim().toLowerCase();
         if (label === 'phead') { pheadCol = i; return false; }
       });
@@ -1352,9 +1429,9 @@
     // Toggle Skip value on selected rows
     function toggleSkipSelected() {
       const $table = $('#table-dpv-components');
-      const $selected = $table.find('tbody tr.selected');
+      const $selected = getSelectedRows($table);
       if (!$selected.length) {
-        alert('No rows selected. Click on rows to select them first.');
+        alert('No rows selected. Use checkboxes to select rows first.');
         return;
       }
 
@@ -1391,6 +1468,7 @@
       table.rows = [];
       const header = [];
       $table.find('thead th').each(function () {
+        if ($(this).hasClass('select-col')) return; // Skip checkbox column
         const left = $(this).find('.th-left').text().trim();
         header.push(left || $(this).text().trim());
       });
@@ -1399,6 +1477,7 @@
       $table.find('tbody tr').each(function () {
         const row = [];
         $(this).children('td').each(function () {
+          if ($(this).hasClass('select-col')) return; // Skip checkbox column
           row.push($(this).text().trim());
         });
         if (row.join('').length > 0) table.rows.push(row);
@@ -1545,6 +1624,54 @@
       }
 
       return { issues, warnings };
+    }
+
+    // Mark components as skipped if they reference non-existent Station IDs
+    // Called after loading DPVx to auto-skip orphaned components
+    function markOrphanedComponentsAsSkipped() {
+      const station = dpvModel.tables['Station'];
+      const ecomp = dpvModel.tables['EComponent'];
+
+      if (!station || !ecomp || !ecomp.rows.length) return [];
+
+      // Get all valid Station IDs
+      const stIdIdx = station.header.indexOf('ID');
+      if (stIdIdx === -1) return [];
+
+      const validStationIds = new Set();
+      station.rows.forEach(row => {
+        const id = (row[stIdIdx] || '').trim();
+        if (id) validStationIds.add(id);
+      });
+
+      // If no stations, skip all components
+      if (validStationIds.size === 0) return [];
+
+      // Find orphaned components (STNo references non-existent Station ID)
+      const stNoIdx = ecomp.header.indexOf('STNo.');
+      const skipIdx = ecomp.header.indexOf('Skip');
+      const noteIdx = ecomp.header.indexOf('Note');
+      const explainIdx = ecomp.header.indexOf('Explain');
+
+      if (stNoIdx === -1 || skipIdx === -1) return [];
+
+      const skippedComponents = [];
+      ecomp.rows.forEach(row => {
+        const stNo = (row[stNoIdx] || '').trim();
+        const currentSkip = (row[skipIdx] || '').trim();
+
+        // Only auto-skip if not already skipped and STNo is invalid
+        if (currentSkip !== '1' && stNo && !validStationIds.has(stNo)) {
+          row[skipIdx] = '1';
+          // Get a descriptive name for the component
+          const note = noteIdx !== -1 ? (row[noteIdx] || '').trim() : '';
+          const explain = explainIdx !== -1 ? (row[explainIdx] || '').trim() : '';
+          const desc = note || explain || `STNo.${stNo}`;
+          skippedComponents.push(desc);
+        }
+      });
+
+      return skippedComponents;
     }
 
     // Fix STNo. references by matching Explain to Station Note
@@ -2133,42 +2260,69 @@
       $('#tab-' + tab).addClass('active');
     });
 
-    /* ---------- Row selection ---------- */
+    /* ---------- Row selection (checkbox-based) ---------- */
 
-    let lastClickedRow = null; // Track last clicked row for shift-select
+    let lastClickedCheckboxRow = null; // Track last clicked row for shift-select
 
-    $(document).on('click', 'table.data-grid tbody tr', function (e) {
-      if(!$(e.target).is('td')) return;
-
+    // Select-all checkbox handler
+    $(document).on('change', 'table.data-grid thead .select-all-checkbox', function () {
       const $table = $(this).closest('table.data-grid');
-      const $rows = $table.find('tbody tr');
-      const $this = $(this);
-      const thisIndex = $rows.index($this);
+      const isChecked = $(this).prop('checked');
+      $table.find('tbody .row-select-checkbox').prop('checked', isChecked);
+      $table.find('tbody tr').toggleClass('selected', isChecked);
+    });
 
-      if (e.shiftKey && lastClickedRow !== null) {
-        // Shift+click: select range
-        const lastIndex = $rows.index(lastClickedRow);
-        if (lastIndex !== -1) {
+    // Individual row checkbox handler
+    $(document).on('change', 'table.data-grid tbody .row-select-checkbox', function (e) {
+      const $row = $(this).closest('tr');
+      const $table = $row.closest('table.data-grid');
+      const isChecked = $(this).prop('checked');
+      $row.toggleClass('selected', isChecked);
+
+      // Update select-all checkbox state
+      const $allCheckboxes = $table.find('tbody .row-select-checkbox');
+      const $checkedCheckboxes = $allCheckboxes.filter(':checked');
+      const $selectAll = $table.find('thead .select-all-checkbox');
+      $selectAll.prop('checked', $allCheckboxes.length > 0 && $allCheckboxes.length === $checkedCheckboxes.length);
+      $selectAll.prop('indeterminate', $checkedCheckboxes.length > 0 && $checkedCheckboxes.length < $allCheckboxes.length);
+
+      lastClickedCheckboxRow = $row;
+    });
+
+    // Shift+click on checkbox for range selection
+    $(document).on('click', 'table.data-grid tbody .row-select-checkbox', function (e) {
+      if (e.shiftKey && lastClickedCheckboxRow !== null) {
+        const $row = $(this).closest('tr');
+        const $table = $row.closest('table.data-grid');
+        const $rows = $table.find('tbody tr');
+        const thisIndex = $rows.index($row);
+        const lastIndex = $rows.index(lastClickedCheckboxRow);
+
+        if (lastIndex !== -1 && thisIndex !== lastIndex) {
           const start = Math.min(thisIndex, lastIndex);
           const end = Math.max(thisIndex, lastIndex);
-          if(!e.ctrlKey && !e.metaKey) {
-            $rows.removeClass('selected');
-          }
+          const shouldCheck = $(this).prop('checked');
           for (let i = start; i <= end; i++) {
-            $rows.eq(i).addClass('selected');
+            const $r = $rows.eq(i);
+            $r.find('.row-select-checkbox').prop('checked', shouldCheck);
+            $r.toggleClass('selected', shouldCheck);
           }
+          // Update select-all state
+          const $allCheckboxes = $table.find('tbody .row-select-checkbox');
+          const $checkedCheckboxes = $allCheckboxes.filter(':checked');
+          const $selectAll = $table.find('thead .select-all-checkbox');
+          $selectAll.prop('checked', $allCheckboxes.length > 0 && $allCheckboxes.length === $checkedCheckboxes.length);
+          $selectAll.prop('indeterminate', $checkedCheckboxes.length > 0 && $checkedCheckboxes.length < $allCheckboxes.length);
         }
-      } else if (e.ctrlKey || e.metaKey) {
-        // Ctrl+click: toggle this row, keep others
-        $this.toggleClass('selected');
-        lastClickedRow = $this;
-      } else {
-        // Regular click: select only this row
-        $rows.removeClass('selected');
-        $this.addClass('selected');
-        lastClickedRow = $this;
       }
     });
+
+    // Helper function to get selected rows (rows with checked checkboxes)
+    function getSelectedRows($table) {
+      return $table.find('tbody tr').filter(function () {
+        return $(this).find('.row-select-checkbox').prop('checked');
+      });
+    }
 
     /* ---------- Row toolbars ---------- */
 
@@ -2184,10 +2338,12 @@
       const tableId = $(this).closest('.row-tools').data('target-table');
       if (!tableId) return;
       const $table = $('#' + tableId);
-      const $rows = $table.find('tbody tr.selected');
-      if (!$rows.length) { alert('No rows selected.'); return; }
+      const $rows = getSelectedRows($table);
+      if (!$rows.length) { alert('No rows selected. Use the checkboxes to select rows.'); return; }
       if (!confirm('Delete ' + $rows.length + ' selected row(s)?')) return;
       $rows.remove();
+      // Reset select-all checkbox
+      $table.find('thead .select-all-checkbox').prop('checked', false).prop('indeterminate', false);
     });
 
     /* ---------- Sorting (CSV + Components) ---------- */
@@ -2195,10 +2351,13 @@
     function sortTable(tableId, colIndex, asc) {
       const $table = $('#' + tableId);
       const $tbody = $table.find('tbody');
+      // Account for checkbox column (adds 1 to index)
+      const hasCheckboxCol = $table.find('thead th.select-col').length > 0;
+      const domColIndex = hasCheckboxCol ? colIndex + 1 : colIndex;
       const rows = $tbody.find('tr').get();
       rows.sort((a,b) => {
-        const va = $(a).children().eq(colIndex).text().trim();
-        const vb = $(b).children().eq(colIndex).text().trim();
+        const va = $(a).children().eq(domColIndex).text().trim();
+        const vb = $(b).children().eq(domColIndex).text().trim();
         const na = parseFloat(va), nb = parseFloat(vb);
         let cmp;
         if (!isNaN(na) && !isNaN(nb)) cmp = na - nb;
@@ -2263,10 +2422,14 @@
       }
       if (e.ctrlKey) return;
 
+      // Check for checkbox column to skip it during navigation
+      const hasCheckboxCol = $table.find('thead th.select-col').length > 0;
+      const minCol = hasCheckboxCol ? 1 : 0; // Skip checkbox column
+
       if (isArrow) {
         e.preventDefault();
         let tr = rowIndex, tc = colIndex;
-        if (key==='ArrowLeft' && tc>0) tc--;
+        if (key==='ArrowLeft' && tc>minCol) tc--;
         if (key==='ArrowRight' && tc<colCount-1) tc++;
         if (key==='ArrowUp' && tr>0) tr--;
         if (key==='ArrowDown' && tr<$rows.length-1) tr++;
@@ -2294,13 +2457,13 @@
         e.preventDefault();
         let tr = rowIndex, tc = colIndex;
         if (e.shiftKey) {
-          if (tc>0) tc--; else if (tr>0) { tr--; tc = colCount-1; }
+          if (tc>minCol) tc--; else if (tr>0) { tr--; tc = colCount-1; }
         } else {
           if (tc<colCount-1) tc++;
           else {
             if (tr === $rows.length-1) addEmptyRow($table.attr('id'));
             const $newRows = $table.find('tbody tr');
-            if (tr < $newRows.length-1) { tr++; tc=0; }
+            if (tr < $newRows.length-1) { tr++; tc=minCol; }
           }
         }
         const $tRow = $table.find('tbody tr').eq(tr);
@@ -2354,6 +2517,7 @@
           const rows = [];
           const headerCells = [];
           $table.find('thead th').each(function () {
+            if ($(this).hasClass('select-col')) return; // Skip checkbox column
             const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
             headerCells.push(csvEscape(label));
           });
@@ -2362,6 +2526,7 @@
           $table.find('tbody tr').each(function () {
             const cells = [];
             $(this).children('td').each(function (idx) {
+              if ($(this).hasClass('select-col')) return; // Skip checkbox column
               let val = $(this).text().trim();
               if (idx === colPosX && offsets.x !== 0) {
                 val = String((parseFloat(val) || 0) + offsets.x);
@@ -2376,9 +2541,10 @@
         }
       }
 
-      const savedName = await saveFileWithDialog(content, lastCsvFilename, [
-        { description: 'CSV files', accept: { 'text/csv': ['.csv'] } },
-        { description: 'POS files', accept: { 'text/plain': ['.pos'] } }
+      // Always save as CSV (never overwrite original POS files)
+      const suggestedName = lastCsvFilename.replace(/\.pos$/i, '.csv');
+      const savedName = await saveFileWithDialog(content, suggestedName, [
+        { description: 'CSV files', accept: { 'text/csv': ['.csv'] } }
       ]);
       if (savedName) lastCsvFilename = savedName;
     });
@@ -2396,6 +2562,9 @@
         // Check if Station needs PHead column added
         const addedPHead = ensureStationPHeadColumn();
 
+        // Check for orphaned components (STNo references non-existent Station ID)
+        const skippedComponents = markOrphanedComponentsAsSkipped();
+
         renderDpvTabsFromModel();
         sortStationTableById();
         currentTab='components';
@@ -2403,6 +2572,19 @@
         $('.tab-btn[data-tab="components"]').addClass('active');
         $('.tab-content').removeClass('active');
         $('#tab-components').addClass('active');
+
+        // Notify user about auto-skipped components
+        if (skippedComponents.length > 0) {
+          const maxShow = 10;
+          let msg = `${skippedComponents.length} component(s) were automatically marked as SKIP because their feeder assignment (STNo.) does not exist in Material Stacks:\n\n`;
+          const showList = skippedComponents.slice(0, maxShow);
+          msg += showList.join('\n');
+          if (skippedComponents.length > maxShow) {
+            msg += `\n... and ${skippedComponents.length - maxShow} more`;
+          }
+          msg += '\n\nThese components will be excluded from DPV export.';
+          alert(msg);
+        }
 
         // If PHead was added, auto-convert to DPVx
         if (addedPHead) {
@@ -2608,16 +2790,13 @@
         }
       }
 
-      // Check if there are any skipped components
-      let excludeSkipped = false;
+      // Count skipped components (they are always excluded from DPV export)
+      let skippedCount = 0;
       if (dpvModel.tables['EComponent']) {
         const ecomp = dpvModel.tables['EComponent'];
         const skipIdx = ecomp.header.indexOf('Skip');
         if (skipIdx !== -1) {
-          const hasSkipped = ecomp.rows.some(row => row[skipIdx] === '1');
-          if (hasSkipped) {
-            excludeSkipped = confirm('There are skipped components. Exclude them from saved DPV file?');
-          }
+          skippedCount = ecomp.rows.filter(row => row[skipIdx] === '1').length;
         }
       }
 
@@ -2637,8 +2816,8 @@
         const deltYIdx = ecomp.header.indexOf('DeltY');
         const skipIdx = ecomp.header.indexOf('Skip');
 
-        // Filter out skipped rows if requested
-        if (excludeSkipped && skipIdx !== -1) {
+        // Always filter out skipped rows from DPV export
+        if (skipIdx !== -1) {
           ecomp.rows = ecomp.rows.filter(row => row[skipIdx] !== '1');
           // Renumber the No. column after filtering
           const noIdx = ecomp.header.indexOf('No.');
@@ -2707,7 +2886,13 @@
       const savedName = await saveFileWithDialog(text, dpvFilename, [
         { description: 'DPV files (Charmhigh standard)', accept: { 'text/plain': ['.dpv'] } }
       ]);
-      if (savedName) lastDpvFilename = savedName;
+      if (savedName) {
+        lastDpvFilename = savedName;
+        // Notify user about excluded skipped components
+        if (skippedCount > 0) {
+          alert(`DPV saved. ${skippedCount} skipped component(s) were excluded from the file.`);
+        }
+      }
 
       // Restore the displayed data (re-read from DOM to undo changes to model)
       rebuildDpvModelFromDom();
@@ -2912,25 +3097,27 @@
     $('#btn-move-to-panels').on('click', () => {
       const $sourceTable = $('#table-dpv-stacks');
       const $targetTable = $('#table-dpv-panel-coord');
-      const $selectedRows = $sourceTable.find('tbody tr.selected');
+      const $selectedRows = getSelectedRows($sourceTable);
 
       if (!$selectedRows.length) {
-        alert('No rows selected. Select rows in Material Stacks to move.');
+        alert('No rows selected. Use checkboxes to select rows in Material Stacks to move.');
         return;
       }
 
-      // Get source headers
+      // Get source headers (skip checkbox column)
       const sourceHeaders = [];
       $sourceTable.find('thead th').each(function () {
+        if ($(this).hasClass('select-col')) return;
         const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
         sourceHeaders.push(label.toLowerCase());
       });
 
       // Ensure Panel_Coord table has headers
       let $targetThead = $targetTable.find('thead');
-      if (!$targetThead.length || !$targetThead.find('th').length) {
+      if (!$targetThead.length || !$targetThead.find('th').length || $targetThead.find('th').length <= 1) {
         const pCoordHeaders = ['Table', 'No.', 'ID', 'DeltX', 'DeltY'];
         $targetThead = $('<thead><tr></tr></thead>');
+        $targetThead.find('tr').append('<th class="select-col"><input type="checkbox" class="select-all-checkbox" title="Select all"></th>');
         pCoordHeaders.forEach((h, idx) => $targetThead.find('tr').append(createHeaderCell(h, idx, false)));
         $targetTable.prepend($targetThead);
         if (!$targetTable.find('tbody').length) {
@@ -2938,9 +3125,10 @@
         }
       }
 
-      // Get target headers
+      // Get target headers (skip checkbox column)
       const targetHeaders = [];
       $targetTable.find('thead th').each(function () {
+        if ($(this).hasClass('select-col')) return;
         const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
         targetHeaders.push(label.toLowerCase());
       });
@@ -2952,14 +3140,18 @@
       $selectedRows.each(function () {
         const $sourceRow = $(this);
         const sourceData = {};
-        $sourceRow.children('td').each(function (i) {
-          if (i < sourceHeaders.length) {
-            sourceData[sourceHeaders[i]] = $(this).text().trim();
+        let colIdx = 0;
+        $sourceRow.children('td').each(function () {
+          if ($(this).hasClass('select-col')) return;
+          if (colIdx < sourceHeaders.length) {
+            sourceData[sourceHeaders[colIdx]] = $(this).text().trim();
           }
+          colIdx++;
         });
 
         // Create new row for Panel_Coord
         const $newRow = $('<tr></tr>');
+        $newRow.append('<td class="select-col"><input type="checkbox" class="row-select-checkbox"></td>');
         targetHeaders.forEach(h => {
           let val = '';
           const hLower = h.toLowerCase();
@@ -2976,31 +3168,35 @@
         $targetTable.find('tbody').append($newRow);
         $sourceRow.remove();
       });
+      // Reset select-all checkbox on source
+      $sourceTable.find('thead .select-all-checkbox').prop('checked', false).prop('indeterminate', false);
     });
 
     // Move selected rows from Panel List (Panel_Coord) to Material Stacks (Station)
     $('#btn-move-to-stacks').on('click', () => {
       const $sourceTable = $('#table-dpv-panel-coord');
       const $targetTable = $('#table-dpv-stacks');
-      const $selectedRows = $sourceTable.find('tbody tr.selected');
+      const $selectedRows = getSelectedRows($sourceTable);
 
       if (!$selectedRows.length) {
-        alert('No rows selected. Select rows in Panel_Coord to move.');
+        alert('No rows selected. Use checkboxes to select rows in Panel_Coord to move.');
         return;
       }
 
-      // Get source headers
+      // Get source headers (skip checkbox column)
       const sourceHeaders = [];
       $sourceTable.find('thead th').each(function () {
+        if ($(this).hasClass('select-col')) return;
         const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
         sourceHeaders.push(label.toLowerCase());
       });
 
       // Ensure Station table has headers
       let $targetThead = $targetTable.find('thead');
-      if (!$targetThead.length || !$targetThead.find('th').length) {
+      if (!$targetThead.length || !$targetThead.find('th').length || $targetThead.find('th').length <= 1) {
         const stationHeaders = ['Table', 'No.', 'ID', 'DeltX', 'DeltY', 'FeedRates', 'Note', 'Height', 'Speed', 'Status', 'nPixSizeX', 'nPixSizeY', 'HeightTake', 'DelayTake', 'nPullStripSpeed', 'nThreshold', 'nVisualRadio'];
         $targetThead = $('<thead><tr></tr></thead>');
+        $targetThead.find('tr').append('<th class="select-col"><input type="checkbox" class="select-all-checkbox" title="Select all"></th>');
         stationHeaders.forEach((h, idx) => $targetThead.find('tr').append(createHeaderCell(h, idx, false)));
         $targetTable.prepend($targetThead);
         if (!$targetTable.find('tbody').length) {
@@ -3008,18 +3204,19 @@
         }
       }
 
-      // Get target headers
+      // Get target headers (skip checkbox column)
       const targetHeaders = [];
       $targetTable.find('thead th').each(function () {
+        if ($(this).hasClass('select-col')) return;
         const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
         targetHeaders.push(label.toLowerCase());
       });
 
-      // Find existing IDs in target to determine unique ID
-      const idCol = targetHeaders.indexOf('id');
+      // Find existing IDs in target to determine unique ID (account for checkbox column at index 0)
+      const idCol = targetHeaders.indexOf('id') + 1; // +1 for checkbox column
       const usedIds = new Set();
       $targetTable.find('tbody tr').each(function () {
-        if (idCol !== -1) {
+        if (idCol > 0) {
           const idVal = $(this).children().eq(idCol).text().trim();
           if (idVal) usedIds.add(parseInt(idVal, 10) || 0);
         }
@@ -3050,10 +3247,13 @@
       $selectedRows.each(function () {
         const $sourceRow = $(this);
         const sourceData = {};
-        $sourceRow.children('td').each(function (i) {
-          if (i < sourceHeaders.length) {
-            sourceData[sourceHeaders[i]] = $(this).text().trim();
+        let colIdx = 0;
+        $sourceRow.children('td').each(function () {
+          if ($(this).hasClass('select-col')) return;
+          if (colIdx < sourceHeaders.length) {
+            sourceData[sourceHeaders[colIdx]] = $(this).text().trim();
           }
+          colIdx++;
         });
 
         // Determine unique ID for this row
@@ -3063,6 +3263,7 @@
 
         // Create new row for Station
         const $newRow = $('<tr></tr>');
+        $newRow.append('<td class="select-col"><input type="checkbox" class="row-select-checkbox"></td>');
         targetHeaders.forEach(h => {
           let val = '';
           const hLower = h.toLowerCase();
@@ -3083,6 +3284,8 @@
         $targetTable.find('tbody').append($newRow);
         $sourceRow.remove();
       });
+      // Reset select-all checkbox on source
+      $sourceTable.find('thead .select-all-checkbox').prop('checked', false).prop('indeterminate', false);
 
       sortStationTableById();
     });
@@ -3158,27 +3361,37 @@
       }
     }
 
-    // Get Station table column indices
+    // Get Station table column indices (accounts for checkbox column at index 0)
     function getStationColumnIndices() {
       const $table = $('#table-dpv-stacks');
       const headers = [];
-      $table.find('thead th').each(function () {
+      let offset = 0;
+      $table.find('thead th').each(function (i) {
+        if ($(this).hasClass('select-col')) {
+          offset = 1; // Checkbox is at index 0, data columns start at 1
+          return;
+        }
         const label = $(this).find('.th-left').text().trim() || $(this).text().trim();
         headers.push(label.toLowerCase());
       });
+      // Add offset to account for checkbox column
+      const getIdx = (name) => {
+        const idx = headers.indexOf(name);
+        return idx === -1 ? -1 : idx + offset;
+      };
       return {
-        note: headers.indexOf('note'),
-        phead: headers.indexOf('phead'),
-        deltx: headers.indexOf('deltx'),
-        delty: headers.indexOf('delty'),
-        feedrates: headers.indexOf('feedrates'),
-        height: headers.indexOf('height'),
-        speed: headers.indexOf('speed'),
-        heighttake: headers.indexOf('heighttake'),
-        delaytake: headers.indexOf('delaytake'),
-        npullstripspeed: headers.indexOf('npullstripspeed'),
-        nthreshold: headers.indexOf('nthreshold'),
-        nvisualradio: headers.indexOf('nvisualradio'),
+        note: getIdx('note'),
+        phead: getIdx('phead'),
+        deltx: getIdx('deltx'),
+        delty: getIdx('delty'),
+        feedrates: getIdx('feedrates'),
+        height: getIdx('height'),
+        speed: getIdx('speed'),
+        heighttake: getIdx('heighttake'),
+        delaytake: getIdx('delaytake'),
+        npullstripspeed: getIdx('npullstripspeed'),
+        nthreshold: getIdx('nthreshold'),
+        nvisualradio: getIdx('nvisualradio'),
         headers: headers
       };
     }
@@ -3186,9 +3399,9 @@
     // Save selected rows to library (keyed by Note value)
     function saveSelectedToLibrary() {
       const $table = $('#table-dpv-stacks');
-      const $selectedRows = $table.find('tbody tr.selected');
+      const $selectedRows = getSelectedRows($table);
       if ($selectedRows.length === 0) {
-        alert('No rows selected. Select rows in Material Stacks first, then click "Save to Library".');
+        alert('No rows selected. Use checkboxes to select rows in Material Stacks first, then click "Save to Library".');
         return;
       }
 
@@ -3482,10 +3695,8 @@
 
     function hideWorkflowModal() {
       $('#workflow-modal').removeClass('visible');
-      // Save preference if checkbox is checked
-      if ($('#workflow-dont-show').is(':checked')) {
-        localStorage.setItem(WORKFLOW_HIDE_KEY, 'true');
-      }
+      // Always save preference after first view (user only sees dialog once)
+      localStorage.setItem(WORKFLOW_HIDE_KEY, 'true');
     }
 
     $('#btn-workflow').on('click', showWorkflowModal);
