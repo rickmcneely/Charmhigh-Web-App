@@ -2022,6 +2022,8 @@
         if (tempModel.tables['Station'] && tempModel.tables['Station'].rows.length) {
           dpvModel.tables['Station'] = tempModel.tables['Station'];
           rederiveStNoFromStationByNote();
+          // Check for orphaned components after loading new Station data
+          const skippedComponents = markOrphanedComponentsAsSkipped();
           renderDpvTabsFromModel();
           sortStationTableById();
           currentTab = 'stacks';
@@ -2029,7 +2031,11 @@
           $('.tab-btn[data-tab="stacks"]').addClass('active');
           $('.tab-content').removeClass('active');
           $('#tab-stacks').addClass('active');
-          alert('Complete Station data loaded (' + tempModel.tables['Station'].rows.length + ' rows).');
+          let msg = 'Complete Station data loaded (' + tempModel.tables['Station'].rows.length + ' rows).';
+          if (skippedComponents.length > 0) {
+            msg += '\n\n' + skippedComponents.length + ' component(s) were marked SKIP (no matching feeder in Material Stacks).';
+          }
+          alert(msg);
           return;
         }
       }
@@ -2089,6 +2095,8 @@
       });
 
       rederiveStNoFromStationByNote();
+      // Check for orphaned components after loading new Station data
+      const skippedComponents = markOrphanedComponentsAsSkipped();
       renderDpvTabsFromModel();
       sortStationTableById();
       currentTab = 'stacks';
@@ -2096,7 +2104,11 @@
       $('.tab-btn[data-tab="stacks"]').addClass('active');
       $('.tab-content').removeClass('active');
       $('#tab-stacks').addClass('active');
-      alert('Stack list applied; Station updated; STNo. re-derived using component values (Val).');
+      let msg = 'Stack list applied; Station updated; STNo. re-derived using component values (Val).';
+      if (skippedComponents.length > 0) {
+        msg += '\n\n' + skippedComponents.length + ' component(s) were marked SKIP (no matching feeder in Material Stacks).';
+      }
+      alert(msg);
     }
 
     /* ---------- ID ↔ STNo sync (direct edits on Material Stacks) ---------- */
