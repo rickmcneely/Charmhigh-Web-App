@@ -32,8 +32,8 @@ dpvModel = {
 3. **Material Stacks** - DPV Station table (feeder assignments)
 4. **Panel List** - Panel_Array and Panel_Coord tables
 
-### Custom DPVx Format
-Extended DPV format with additional `PHead` column in Station table. Standard DPV export strips this column for machine compatibility.
+### Custom .stack Format
+Extended DPV format (`.stack` extension) with additional `PHead` column in Station table. Standard DPV export strips this column for machine compatibility. Used for saving/loading Material Stacks.
 
 ### Browser Storage
 - **Master Feeder Library**: `localStorage` key `chmt48vb_feeder_library` - stores feeder configurations by component value (Note)

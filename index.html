@@ -758,7 +758,7 @@
         <h3 style="color:#2563eb;">Tips for Repeat Projects</h3>
         <ul>
           <li><strong>Master Feeder Library</strong> – Save your feeder configurations once, auto-apply to new projects</li>
-          <li><strong>Export/Import Stack Lists</strong> – Save/Load Material Stacks as DPVx files for specific projects</li>
+          <li><strong>Export/Import Stack Lists</strong> – Save/Load Material Stacks as .stack files for specific projects</li>
           <li><strong>Consistent Component Values</strong> – Use consistent naming in KiCad (e.g., "10k" not "10K" or "10kohm") for reliable library matching</li>
         </ul>
       </div>
@@ -772,8 +772,8 @@
 
 <!-- Hidden file inputs -->
 <input id="file-input-csv" type="file" accept=".csv,.pos,text/csv,text/plain" style="display:none">
-<input id="file-input-dpv" type="file" accept=".dpv,.dpvx,text/plain" style="display:none">
-<input id="file-input-stacklist" type="file" accept=".dpvx,.dpv,.csv,text/csv,text/plain" style="display:none">
+<input id="file-input-dpv" type="file" accept=".dpv,.stack,text/plain" style="display:none">
+<input id="file-input-stacklist" type="file" accept=".stack,.dpv,.csv,text/csv,text/plain" style="display:none">
 <input id="file-input-library" type="file" accept=".json,application/json" style="display:none">
 
 <script>
@@ -828,14 +828,14 @@
       if (hasFileSystemAccess) {
         try {
           const types = [];
-          // Check for DPV/DPVx first if it appears first in accept string
+          // Check for DPV/Stack first if it appears first in accept string
           const dpvFirst = accept.indexOf('.dpv') < accept.indexOf('.csv') || !accept.includes('.csv');
 
           const addDpvType = () => {
-            if (accept.includes('.dpv') || accept.includes('.dpvx')) {
+            if (accept.includes('.dpv') || accept.includes('.stack')) {
               types.push({
-                description: 'DPV/DPVx files',
-                accept: { 'text/plain': ['.dpv', '.dpvx'] }
+                description: 'DPV/Stack files',
+                accept: { 'text/plain': ['.dpv', '.stack'] }
               });
             }
           };
@@ -1531,16 +1531,20 @@
         }
       }
 
-      // Check EComponent STNo. references
+      // Check EComponent STNo. references (skip components marked as Skip=1)
       if (ecomp && ecomp.header.length && ecomp.rows.length) {
         const stNoIdx = ecomp.header.indexOf('STNo.');
         const explainIdx = ecomp.header.indexOf('Explain');
         const noteIdx = ecomp.header.indexOf('Note');
         const noIdx = ecomp.header.indexOf('No.');
+        const skipIdx = ecomp.header.indexOf('Skip');
 
         if (stNoIdx !== -1) {
           const missingRefs = {};
           ecomp.rows.forEach(row => {
+            // Skip components marked as Skip=1 (they won't be in the export)
+            if (skipIdx !== -1 && (row[skipIdx] || '').trim() === '1') return;
+
             const stNo = (row[stNoIdx] || '').trim();
             if (stNo && !stationIds.has(stNo)) {
               const explain = explainIdx !== -1 ? (row[explainIdx] || '').trim() : '';
@@ -1626,47 +1630,56 @@
       return { issues, warnings };
     }
 
-    // Mark components as skipped if they reference non-existent Station IDs
-    // Called after loading DPVx to auto-skip orphaned components
+    // Mark components as skipped if their Explain value has no matching Station Note
+    // Also sync PHead from Station to matching Components
+    // Called after loading .stack or stack list to auto-skip orphaned components
     function markOrphanedComponentsAsSkipped() {
       const station = dpvModel.tables['Station'];
       const ecomp = dpvModel.tables['EComponent'];
 
       if (!station || !ecomp || !ecomp.rows.length) return [];
 
-      // Get all valid Station IDs
-      const stIdIdx = station.header.indexOf('ID');
-      if (stIdIdx === -1) return [];
+      // Get all Station Note values and their PHead (these are the available feeders)
+      const stNoteIdx = station.header.indexOf('Note');
+      const stPheadIdx = station.header.indexOf('PHead');
+      if (stNoteIdx === -1) return [];
 
-      const validStationIds = new Set();
+      // Build map from Note to PHead
+      const noteToPhead = {};
       station.rows.forEach(row => {
-        const id = (row[stIdIdx] || '').trim();
-        if (id) validStationIds.add(id);
+        const note = (row[stNoteIdx] || '').trim();
+        const phead = stPheadIdx !== -1 ? (row[stPheadIdx] || '1').trim() : '1';
+        if (note) noteToPhead[note] = phead;
       });
 
-      // If no stations, skip all components
-      if (validStationIds.size === 0) return [];
+      // If no stations with notes, return empty (don't skip everything)
+      if (Object.keys(noteToPhead).length === 0) return [];
 
-      // Find orphaned components (STNo references non-existent Station ID)
-      const stNoIdx = ecomp.header.indexOf('STNo.');
+      // Find orphaned components (Explain has no matching Station Note)
+      // And sync PHead for matching components
       const skipIdx = ecomp.header.indexOf('Skip');
-      const noteIdx = ecomp.header.indexOf('Note');
       const explainIdx = ecomp.header.indexOf('Explain');
+      const noteIdx = ecomp.header.indexOf('Note');
+      const ecPheadIdx = ecomp.header.indexOf('PHead');
 
-      if (stNoIdx === -1 || skipIdx === -1) return [];
+      if (skipIdx === -1 || explainIdx === -1) return [];
 
       const skippedComponents = [];
       ecomp.rows.forEach(row => {
-        const stNo = (row[stNoIdx] || '').trim();
+        const explain = (row[explainIdx] || '').trim();
         const currentSkip = (row[skipIdx] || '').trim();
 
-        // Only auto-skip if not already skipped and STNo is invalid
-        if (currentSkip !== '1' && stNo && !validStationIds.has(stNo)) {
+        if (explain && noteToPhead.hasOwnProperty(explain)) {
+          // Component matches a Station Note - sync PHead from Station
+          if (ecPheadIdx !== -1) {
+            row[ecPheadIdx] = noteToPhead[explain];
+          }
+        } else if (currentSkip !== '1' && explain) {
+          // No match - mark as skipped
           row[skipIdx] = '1';
           // Get a descriptive name for the component
           const note = noteIdx !== -1 ? (row[noteIdx] || '').trim() : '';
-          const explain = explainIdx !== -1 ? (row[explainIdx] || '').trim() : '';
-          const desc = note || explain || `STNo.${stNo}`;
+          const desc = note || explain;
           skippedComponents.push(desc);
         }
       });
@@ -1950,13 +1963,13 @@
       const station = dpvModel.tables['Station'];
       if (!station || !station.header.length || !station.rows.length) { alert('No Station data.'); return; }
 
-      // Save complete Station table as DPVx file with all parameters (including custom PHead)
-      const lines = ['separated', 'FILE,MaterialStack.dpvx', 'PANELYPE,1', ''];
+      // Save complete Station table as .stack file with all parameters (including custom PHead)
+      const lines = ['separated', 'FILE,MaterialStack.stack', 'PANELYPE,1', ''];
       lines.push(station.header.map(csvEscape).join(','));
       station.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
 
-      const savedName = await saveFileWithDialog(lines.join('\r\n'), lastStacklistFilename.replace(/\.(csv|dpv)$/i, '.dpvx') || 'MaterialStack.dpvx', [
-        { description: 'DPVx files (Extended DPV)', accept: { 'text/plain': ['.dpvx'] } }
+      const savedName = await saveFileWithDialog(lines.join('\r\n'), lastStacklistFilename.replace(/\.(csv|dpv)$/i, '.stack') || 'MaterialStack.stack', [
+        { description: 'Stack files (Material Stacks)', accept: { 'text/plain': ['.stack'] } }
       ]);
       if (savedName) lastStacklistFilename = savedName;
     }
@@ -2021,6 +2034,8 @@
 
         if (tempModel.tables['Station'] && tempModel.tables['Station'].rows.length) {
           dpvModel.tables['Station'] = tempModel.tables['Station'];
+          // Ensure PHead column exists (add if missing)
+          ensureStationPHeadColumn();
           rederiveStNoFromStationByNote();
           // Check for orphaned components after loading new Station data
           const skippedComponents = markOrphanedComponentsAsSkipped();
@@ -2094,6 +2109,8 @@
         }
       });
 
+      // Ensure PHead column exists (add if missing)
+      ensureStationPHeadColumn();
       rederiveStNoFromStationByNote();
       // Check for orphaned components after loading new Station data
       const skippedComponents = markOrphanedComponentsAsSkipped();
@@ -2356,6 +2373,19 @@
       $rows.remove();
       // Reset select-all checkbox
       $table.find('thead .select-all-checkbox').prop('checked', false).prop('indeterminate', false);
+
+      // If deleting from Material Stacks, check for orphaned components
+      if (tableId === 'table-dpv-stacks') {
+        rebuildDpvModelFromDom();
+        const skippedComponents = markOrphanedComponentsAsSkipped();
+        if (skippedComponents.length > 0) {
+          // Re-render components table to show updated Skip values
+          renderDpvTable('table-dpv-components', dpvModel.tables['EComponent'] || {header:[],rows:[]}, true);
+          makeEcomponentStnoReadonly();
+          updateSkipRowStyling();
+          alert(skippedComponents.length + ' component(s) were marked SKIP (no matching feeder in Material Stacks):\n\n' + skippedComponents.slice(0, 10).join('\n') + (skippedComponents.length > 10 ? '\n... and ' + (skippedComponents.length - 10) + ' more' : ''));
+        }
+      }
     });
 
     /* ---------- Sorting (CSV + Components) ---------- */
@@ -2562,7 +2592,7 @@
     });
 
     $('#btn-load-dpv').on('click', async () => {
-      const result = await loadFileWithDialog('.dpv,.dpvx', 'file-input-dpv');
+      const result = await loadFileWithDialog('.dpv,.stack', 'file-input-dpv');
       if (!result) return;
       const { file, name } = result;
       lastDpvFilename = name;
@@ -2598,10 +2628,10 @@
           alert(msg);
         }
 
-        // If PHead was added, auto-convert to DPVx
+        // If PHead was added, auto-convert to .stack
         if (addedPHead) {
-          alert('PHead column was added to Material Stacks (derived from Components).\n\nThe file will be converted to DPVx format.');
-          await autoSaveAsDpvx(name);
+          alert('PHead column was added to Material Stacks (derived from Components).\n\nThe file will be converted to .stack format.');
+          await autoSaveAsStack(name);
         } else if (confirm('DPV loaded. Would you like to Export Material Stacks / Panel List?')) {
           exportMaterialStacksAndPanelLists();
         }
@@ -2664,15 +2694,15 @@
       return true; // PHead was added
     }
 
-    // Auto-save the current DPV data as DPVx format
-    async function autoSaveAsDpvx(originalName) {
+    // Auto-save the current DPV data as .stack format
+    async function autoSaveAsStack(originalName) {
       rebuildDpvModelFromDom();
 
-      // Generate DPVx filename
-      const dpvxName = originalName.replace(/\.dpv$/i, '.dpvx');
+      // Generate .stack filename
+      const stackName = originalName.replace(/\.dpv$/i, '.stack');
 
-      // Build complete DPVx content
-      const lines = ['separated', 'FILE,' + dpvxName, 'PANELYPE,1'];
+      // Build complete .stack content
+      const lines = ['separated', 'FILE,' + stackName, 'PANELYPE,1'];
 
       // Add Station table
       const station = dpvModel.tables['Station'];
@@ -2693,12 +2723,12 @@
         }
       });
 
-      await saveFileWithDialog(lines.join('\r\n'), dpvxName, [
-        { description: 'DPVx files (Extended DPV)', accept: { 'text/plain': ['.dpvx'] } }
+      await saveFileWithDialog(lines.join('\r\n'), stackName, [
+        { description: 'Stack files (Material Stacks)', accept: { 'text/plain': ['.stack'] } }
       ]);
 
-      lastDpvFilename = dpvxName;
-      updateFileDisplay('dpv', dpvxName);
+      lastDpvFilename = stackName;
+      updateFileDisplay('dpv', stackName);
     }
 
     // Validate DPV button handler
@@ -2851,17 +2881,24 @@
         }
       }
 
-      // Format coordinates in Station table
+      // Format coordinates and renumber No. column in Station table
       if (dpvModel.tables['Station']) {
         const station = dpvModel.tables['Station'];
         const deltXIdx = station.header.indexOf('DeltX');
         const deltYIdx = station.header.indexOf('DeltY');
-        if (deltXIdx !== -1 && deltYIdx !== -1) {
-          station.rows.forEach(row => {
+        const noIdx = station.header.indexOf('No.');
+
+        station.rows.forEach((row, idx) => {
+          // Renumber No. column to be 0-indexed
+          if (noIdx !== -1) {
+            row[noIdx] = String(idx);
+          }
+          // Format coordinates
+          if (deltXIdx !== -1 && deltYIdx !== -1) {
             row[deltXIdx] = formatCoord(row[deltXIdx]);
             row[deltYIdx] = formatCoord(row[deltYIdx]);
-          });
-        }
+          }
+        });
       }
 
       // Format coordinates in Panel_Coord table
@@ -2877,7 +2914,8 @@
         }
       }
 
-      // Convert DPVx to standard Charmhigh DPV format by removing PHead from Station
+      // Convert .stack to standard Charmhigh DPV format by removing PHead from Station only
+      // (PHead IS part of standard DPV in EComponent table, but NOT in Station table)
       if (dpvModel.tables['Station']) {
         const station = dpvModel.tables['Station'];
         const pheadIdx = station.header.indexOf('PHead');
@@ -2893,13 +2931,16 @@
 
       const text = dpvToText();
 
-      // Use .dpv extension (convert from .dpvx if needed)
-      const dpvFilename = lastDpvFilename.replace(/\.dpvx$/i, '.dpv');
+      // Ensure .dpv extension for Charmhigh machine compatibility
+      let dpvFilename = lastDpvFilename.replace(/\.(dpv|stack|csv|pos)$/i, '') + '.dpv';
       const savedName = await saveFileWithDialog(text, dpvFilename, [
         { description: 'DPV files (Charmhigh standard)', accept: { 'text/plain': ['.dpv'] } }
       ]);
       if (savedName) {
-        lastDpvFilename = savedName;
+        // Only store the filename if it's .dpv (don't store .stack)
+        if (savedName.toLowerCase().endsWith('.dpv')) {
+          lastDpvFilename = savedName;
+        }
         // Notify user about excluded skipped components
         if (skippedCount > 0) {
           alert(`DPV saved. ${skippedCount} skipped component(s) were excluded from the file.`);
@@ -2917,7 +2958,7 @@
     $('#btn-save-stacklist').on('click', saveStackList);
 
     $('#btn-load-stacklist').on('click', async () => {
-      const result = await loadFileWithDialog('.dpvx,.dpv,.csv', 'file-input-stacklist');
+      const result = await loadFileWithDialog('.stack,.dpv,.csv', 'file-input-stacklist');
       if (!result) return;
       const { file, name } = result;
       lastStacklistFilename = name;
@@ -2926,7 +2967,7 @@
       r.readAsText(file);
     });
 
-    // Export both Material Stacks and Panel Lists as separate DPVx files
+    // Export both Material Stacks and Panel Lists as separate .stack files
     async function exportMaterialStacksAndPanelLists() {
       rebuildDpvModelFromDom();
 
@@ -2936,21 +2977,21 @@
 
       let exported = [];
 
-      // Export Station (Material Stacks) if present - use DPVx format
+      // Export Station (Material Stacks) if present - use .stack format
       if (station && station.header.length && station.rows.length) {
-        const lines = ['separated', 'FILE,MaterialStack.dpvx', 'PANELYPE,1', ''];
+        const lines = ['separated', 'FILE,MaterialStack.stack', 'PANELYPE,1', ''];
         lines.push(station.header.map(csvEscape).join(','));
         station.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
 
-        await saveFileWithDialog(lines.join('\r\n'), 'MaterialStack.dpvx', [
-          { description: 'DPVx files (Extended DPV)', accept: { 'text/plain': ['.dpvx'] } }
+        await saveFileWithDialog(lines.join('\r\n'), 'MaterialStack.stack', [
+          { description: 'Stack files (Material Stacks)', accept: { 'text/plain': ['.stack'] } }
         ]);
         exported.push('Material Stacks (Station)');
       }
 
-      // Export Panel Lists (Panel_Array + Panel_Coord) if present - use DPVx format
+      // Export Panel Lists (Panel_Array + Panel_Coord) if present - use .stack format
       if ((pArray && pArray.rows.length) || (pCoord && pCoord.rows.length)) {
-        const lines = ['separated', 'FILE,PanelList.dpvx', 'PANELYPE,1'];
+        const lines = ['separated', 'FILE,PanelList.stack', 'PANELYPE,1'];
 
         if (pArray && pArray.header.length && pArray.rows.length) {
           lines.push('');
@@ -2964,8 +3005,8 @@
           pCoord.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
         }
 
-        await saveFileWithDialog(lines.join('\r\n'), 'PanelList.dpvx', [
-          { description: 'DPVx files (Extended DPV)', accept: { 'text/plain': ['.dpvx'] } }
+        await saveFileWithDialog(lines.join('\r\n'), 'PanelList.stack', [
+          { description: 'Stack files (Material Stacks)', accept: { 'text/plain': ['.stack'] } }
         ]);
         exported.push('Panel List (Panel_Array/Panel_Coord)');
       }
@@ -2977,7 +3018,7 @@
       }
     }
 
-    // Export Material Stacks (Station) to DPVx file
+    // Export Material Stacks (Station) to .stack file
     $('#btn-export-stacks-dpv').on('click', async () => {
       rebuildDpvModelFromDom();
       const station = dpvModel.tables['Station'];
@@ -2986,18 +3027,18 @@
         return;
       }
 
-      const lines = ['separated', 'FILE,MaterialStack.dpvx', 'PANELYPE,1', ''];
+      const lines = ['separated', 'FILE,MaterialStack.stack', 'PANELYPE,1', ''];
       lines.push(station.header.map(csvEscape).join(','));
       station.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
 
-      const savedName = await saveFileWithDialog(lines.join('\r\n'), 'MaterialStack.dpvx', [
-        { description: 'DPVx files (Extended DPV)', accept: { 'text/plain': ['.dpvx'] } }
+      const savedName = await saveFileWithDialog(lines.join('\r\n'), 'MaterialStack.stack', [
+        { description: 'Stack files (Material Stacks)', accept: { 'text/plain': ['.stack'] } }
       ]);
     });
 
-    // Import Material Stacks (Station) from DPVx/DPV file
+    // Import Material Stacks (Station) from .stack/DPV file
     $('#btn-import-stacks-dpv').on('click', async () => {
-      const result = await loadFileWithDialog('.dpvx,.dpv', 'file-input-dpv');
+      const result = await loadFileWithDialog('.stack,.dpv', 'file-input-dpv');
       if (!result) return;
       const { file, name } = result;
       const r = new FileReader();
@@ -3031,7 +3072,7 @@
       r.readAsText(file);
     });
 
-    // Export Panel Lists (Panel_Array + Panel_Coord) to DPVx file
+    // Export Panel Lists (Panel_Array + Panel_Coord) to .stack file
     $('#btn-export-panel-dpv').on('click', async () => {
       rebuildDpvModelFromDom();
       const pArray = dpvModel.tables['Panel_Array'];
@@ -3041,7 +3082,7 @@
         return;
       }
 
-      const lines = ['separated', 'FILE,PanelList.dpvx', 'PANELYPE,1'];
+      const lines = ['separated', 'FILE,PanelList.stack', 'PANELYPE,1'];
 
       if (pArray && pArray.header.length && pArray.rows.length) {
         lines.push('');
@@ -3055,14 +3096,14 @@
         pCoord.rows.forEach(row => lines.push(row.map(v => csvEscape(v || '')).join(',')));
       }
 
-      const savedName = await saveFileWithDialog(lines.join('\r\n'), 'PanelList.dpvx', [
-        { description: 'DPVx files (Extended DPV)', accept: { 'text/plain': ['.dpvx'] } }
+      const savedName = await saveFileWithDialog(lines.join('\r\n'), 'PanelList.stack', [
+        { description: 'Stack files (Material Stacks)', accept: { 'text/plain': ['.stack'] } }
       ]);
     });
 
-    // Import Panel Lists (Panel_Array + Panel_Coord) from DPVx/DPV file
+    // Import Panel Lists (Panel_Array + Panel_Coord) from .stack/DPV file
     $('#btn-import-panel-dpv').on('click', async () => {
-      const result = await loadFileWithDialog('.dpvx,.dpv', 'file-input-dpv');
+      const result = await loadFileWithDialog('.stack,.dpv', 'file-input-dpv');
       if (!result) return;
       const { file, name } = result;
       const r = new FileReader();
@@ -3206,7 +3247,7 @@
       // Ensure Station table has headers
       let $targetThead = $targetTable.find('thead');
       if (!$targetThead.length || !$targetThead.find('th').length || $targetThead.find('th').length <= 1) {
-        const stationHeaders = ['Table', 'No.', 'ID', 'DeltX', 'DeltY', 'FeedRates', 'Note', 'Height', 'Speed', 'Status', 'nPixSizeX', 'nPixSizeY', 'HeightTake', 'DelayTake', 'nPullStripSpeed', 'nThreshold', 'nVisualRadio'];
+        const stationHeaders = ['Table', 'No.', 'ID', 'PHead', 'DeltX', 'DeltY', 'FeedRates', 'Note', 'Height', 'Speed', 'Status', 'nPixSizeX', 'nPixSizeY', 'HeightTake', 'DelayTake', 'nPullStripSpeed', 'nThreshold', 'nVisualRadio'];
         $targetThead = $('<thead><tr></tr></thead>');
         $targetThead.find('tr').append('<th class="select-col"><input type="checkbox" class="select-all-checkbox" title="Select all"></th>');
         stationHeaders.forEach((h, idx) => $targetThead.find('tr').append(createHeaderCell(h, idx, false)));
