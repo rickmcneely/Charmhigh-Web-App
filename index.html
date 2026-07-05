@@ -474,6 +474,69 @@
       background: #d1d5db;
       margin: 0 4px;
     }
+
+    /* Console panel */
+    #app-console {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 150px;
+      background: #1e1e1e;
+      border-top: 2px solid #3b82f6;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px;
+      z-index: 1000;
+      display: none;
+    }
+
+    #app-console.visible {
+      display: block;
+    }
+
+    #app-console .console-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 8px;
+      background: #2d2d2d;
+      color: #9ca3af;
+      font-size: 11px;
+    }
+
+    #app-console .console-header button {
+      background: transparent;
+      border: none;
+      color: #9ca3af;
+      cursor: pointer;
+      padding: 2px 6px;
+      font-size: 11px;
+    }
+
+    #app-console .console-header button:hover {
+      color: #fff;
+    }
+
+    #console-output {
+      height: calc(100% - 24px);
+      overflow-y: auto;
+      padding: 4px 8px;
+      color: #d4d4d4;
+    }
+
+    #console-output .log-entry {
+      margin: 2px 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    #console-output .log-info { color: #d4d4d4; }
+    #console-output .log-warn { color: #f59e0b; }
+    #console-output .log-error { color: #ef4444; }
+    #console-output .log-time { color: #6b7280; margin-right: 8px; }
+
+    /* Add padding to main content when console is visible */
+    .main.console-visible { padding-bottom: 160px; }
   </style>
 </head>
 <body>
@@ -520,6 +583,7 @@
   </div>
   <div class="toolbar-spacer"></div>
   <button id="btn-workflow" class="btn small" style="background:#2563eb;color:#fff;">Getting Started</button>
+  <button id="btn-log" class="btn small">Log</button>
   <button id="btn-help" class="btn small">Help</button>
 </div>
 
@@ -770,6 +834,15 @@
   </div>
 </div>
 
+<!-- Console panel -->
+<div id="app-console">
+  <div class="console-header">
+    <span>Console</span>
+    <button id="console-clear" title="Clear console">Clear</button>
+  </div>
+  <div id="console-output"></div>
+</div>
+
 <!-- Hidden file inputs -->
 <input id="file-input-csv" type="file" accept=".csv,.pos,text/csv,text/plain" style="display:none">
 <input id="file-input-dpv" type="file" accept=".dpv,.stack,text/plain" style="display:none">
@@ -794,6 +867,36 @@
     // Master Feeder Library - localStorage key
     const LIBRARY_STORAGE_KEY = 'chmt48vb_feeder_library';
 
+    // App console logging - logs to both browser console and on-page console
+    function appLog(message, level = 'info') {
+      const $output = $('#console-output');
+      const time = new Date().toLocaleTimeString();
+      const entry = $('<div>').addClass('log-entry log-' + level);
+      entry.append($('<span>').addClass('log-time').text(time));
+      entry.append($('<span>').text(message));
+      $output.append(entry);
+      $output.scrollTop($output[0].scrollHeight);
+
+      // Also log to browser console
+      if (level === 'error') console.error(message);
+      else if (level === 'warn') console.warn(message);
+      else console.log(message);
+    }
+
+    // Clear console button
+    $('#console-clear').on('click', () => $('#console-output').empty());
+
+    // Toggle console visibility
+    $('#btn-log').on('click', function() {
+      const $console = $('#app-console');
+      const $main = $('.main');
+      $console.toggleClass('visible');
+      $main.toggleClass('console-visible');
+    });
+
+    // Log app startup
+    appLog(`ConverTool Web v${APP_VERSION} started`);
+
     // Check if File System Access API is supported
     const hasFileSystemAccess = 'showSaveFilePicker' in window;
 
@@ -814,11 +917,12 @@
           if (err.name === 'AbortError') {
             return null; // User cancelled
           }
-          console.warn('File System Access API failed, falling back to download:', err);
+          appLog('File System Access API failed, falling back to download: ' + err.message, 'warn');
         }
       }
       // Fallback to traditional download
       downloadText(suggestedName, content);
+      appLog(`Downloaded: ${suggestedName}`);
       return suggestedName;
     }
 
@@ -873,7 +977,7 @@
           if (err.name === 'AbortError') {
             return null; // User cancelled
           }
-          console.warn('File System Access API failed, falling back to input:', err);
+          appLog('File System Access API failed, falling back to input: ' + err.message, 'warn');
         }
       }
       // Fallback to traditional file input
@@ -1514,6 +1618,123 @@
       const ecomp = dpvModel.tables['EComponent'];
       const pArray = dpvModel.tables['Panel_Array'];
 
+      // === COLUMN VALIDATION ===
+
+      // Required EComponent columns (PHead is optional but must be last if present)
+      const requiredEComponentCols = ['Table', 'No.', 'ID', 'STNo.', 'DeltX', 'DeltY', 'Angle', 'Height', 'Skip', 'Speed', 'Explain', 'Note', 'Delay'];
+      if (ecomp && ecomp.header.length) {
+        // Check for missing required columns
+        const missingCols = requiredEComponentCols.filter(col => !ecomp.header.includes(col));
+        if (missingCols.length > 0) {
+          issues.push({
+            type: 'missing_ecomponent_columns',
+            columns: missingCols,
+            message: `EComponent table missing required columns: ${missingCols.join(', ')}`
+          });
+        }
+
+        // Check PHead - must exist and be in position 3 (after ID, before STNo.)
+        const pheadIdx = ecomp.header.indexOf('PHead');
+        const idIdx = ecomp.header.indexOf('ID');
+        const stNoIdx = ecomp.header.indexOf('STNo.');
+        const deltXIdx = ecomp.header.indexOf('DeltX');
+        const deltYIdx = ecomp.header.indexOf('DeltY');
+        const angleIdx = ecomp.header.indexOf('Angle');
+        const expectedPheadPos = idIdx !== -1 ? idIdx + 1 : 3;
+
+        if (pheadIdx === -1) {
+          warnings.push({
+            type: 'phead_missing',
+            message: `EComponent table missing PHead column. It will be added in position ${expectedPheadPos + 1} (after ID) on save.`
+          });
+        } else if (pheadIdx !== expectedPheadPos) {
+          issues.push({
+            type: 'phead_wrong_position',
+            position: pheadIdx,
+            expected: expectedPheadPos,
+            message: `EComponent PHead column is in wrong position (column ${pheadIdx + 1}). Charmhigh machine expects PHead in position ${expectedPheadPos + 1} (after ID). This will cause DeltY to show Angle values on the machine! Will be auto-fixed on save.`
+          });
+        }
+
+        // Check column order for critical columns
+        // Expected order: Table, No., ID, PHead, STNo., DeltX, DeltY, Angle, ...
+        if (pheadIdx !== -1 && stNoIdx !== -1 && pheadIdx > stNoIdx) {
+          issues.push({
+            type: 'ecomponent_column_order',
+            message: `EComponent column order invalid: PHead (column ${pheadIdx + 1}) must come before STNo. (column ${stNoIdx + 1}). This will cause column data to shift on the machine!`
+          });
+        }
+        if (stNoIdx !== -1 && deltXIdx !== -1 && stNoIdx > deltXIdx) {
+          issues.push({
+            type: 'ecomponent_column_order',
+            message: `EComponent column order invalid: STNo. (column ${stNoIdx + 1}) must come before DeltX (column ${deltXIdx + 1}).`
+          });
+        }
+        if (deltXIdx !== -1 && deltYIdx !== -1 && deltXIdx > deltYIdx) {
+          issues.push({
+            type: 'ecomponent_column_order',
+            message: `EComponent column order invalid: DeltX (column ${deltXIdx + 1}) must come before DeltY (column ${deltYIdx + 1}).`
+          });
+        }
+        if (deltYIdx !== -1 && angleIdx !== -1 && deltYIdx > angleIdx) {
+          issues.push({
+            type: 'ecomponent_column_order',
+            message: `EComponent column order invalid: DeltY (column ${deltYIdx + 1}) must come before Angle (column ${angleIdx + 1}). This is likely why Angle appears in DeltY on the machine!`
+          });
+        }
+      }
+
+      // Required Station columns
+      const requiredStationCols = ['Table', 'No.', 'ID', 'DeltX', 'DeltY', 'FeedRates', 'Note', 'Height', 'Speed', 'Status'];
+      if (station && station.header.length) {
+        // Check for missing required columns
+        const missingCols = requiredStationCols.filter(col => !station.header.includes(col));
+        if (missingCols.length > 0) {
+          issues.push({
+            type: 'missing_station_columns',
+            columns: missingCols,
+            message: `Station table missing required columns: ${missingCols.join(', ')}`
+          });
+        }
+
+        // Warn if Station has PHead (it will be removed on DPV save)
+        if (station.header.includes('PHead')) {
+          warnings.push({
+            type: 'station_has_phead',
+            message: `Station table has PHead column. This is valid for .stack files but will be removed when saving as DPV.`
+          });
+        }
+      }
+
+      // Required Panel_Array columns
+      const requiredPanelArrayCols = ['Table', 'No.', 'ID', 'IntervalX', 'IntervalY', 'NumX', 'NumY'];
+      if (pArray && pArray.header.length) {
+        const missingCols = requiredPanelArrayCols.filter(col => !pArray.header.includes(col));
+        if (missingCols.length > 0) {
+          warnings.push({
+            type: 'missing_panel_array_columns',
+            columns: missingCols,
+            message: `Panel_Array table missing columns: ${missingCols.join(', ')}`
+          });
+        }
+      }
+
+      // Required Panel_Coord columns
+      const pCoord = dpvModel.tables['Panel_Coord'];
+      const requiredPanelCoordCols = ['Table', 'No.', 'ID', 'DeltX', 'DeltY'];
+      if (pCoord && pCoord.header.length) {
+        const missingCols = requiredPanelCoordCols.filter(col => !pCoord.header.includes(col));
+        if (missingCols.length > 0) {
+          warnings.push({
+            type: 'missing_panel_coord_columns',
+            columns: missingCols,
+            message: `Panel_Coord table missing columns: ${missingCols.join(', ')}`
+          });
+        }
+      }
+
+      // === END COLUMN VALIDATION ===
+
       // Build set of valid Station IDs
       const stationIds = new Set();
       const stationIdToNote = {};
@@ -1624,6 +1845,77 @@
             gaps: gaps,
             message: `Station IDs have gaps: ${gaps.join(', ')}. This may cause STNo. reference issues.`
           });
+        }
+      }
+
+      // Check FILE header - must match actual filename for machine to run
+      const fileHeader = dpvModel.headerLines.find(l => l.startsWith('FILE,'));
+      if (fileHeader) {
+        const fileValue = fileHeader.substring(5); // Remove "FILE,"
+        if (fileValue === 'job.dpv' || !fileValue.endsWith('.dpv')) {
+          warnings.push({
+            type: 'file_header_generic',
+            message: `FILE header is "${fileValue}". Per Charmhigh spec, this MUST match the actual filename or the machine will not run the file. Will be auto-updated on Save DPV.`
+          });
+        }
+      } else {
+        issues.push({
+          type: 'file_header_missing',
+          message: `FILE header line is missing. This is required for the Charmhigh machine.`
+        });
+      }
+
+      // Check PCBFILE header
+      const pcbfileHeader = dpvModel.headerLines.find(l => l.startsWith('PCBFILE,'));
+      if (!pcbfileHeader) {
+        warnings.push({
+          type: 'pcbfile_header_missing',
+          message: `PCBFILE header line is missing. Will be auto-added on Save DPV.`
+        });
+      }
+
+      // Check EComponent.Skip matches Station.Status (vision/vacuum flags)
+      if (ecomp && station && ecomp.rows.length && station.rows.length) {
+        const ecSkipIdx = ecomp.header.indexOf('Skip');
+        const ecStNoIdx = ecomp.header.indexOf('STNo.');
+        const stIdIdx = station.header.indexOf('ID');
+        const stStatusIdx = station.header.indexOf('Status');
+
+        if (ecSkipIdx !== -1 && ecStNoIdx !== -1 && stIdIdx !== -1 && stStatusIdx !== -1) {
+          // Build map of Station ID to Status
+          const stationStatus = {};
+          station.rows.forEach(row => {
+            const id = (row[stIdIdx] || '').trim();
+            const status = (row[stStatusIdx] || '0').trim();
+            if (id) stationStatus[id] = status;
+          });
+
+          // Check each EComponent
+          let mismatchCount = 0;
+          ecomp.rows.forEach(row => {
+            const stNo = (row[ecStNoIdx] || '').trim();
+            const skip = (row[ecSkipIdx] || '0').trim();
+            const expectedStatus = stationStatus[stNo] || '0';
+
+            // Skip field should include the same vision/vacuum flags as Station.Status
+            // Skip=1 means skip component, but flags 2 and 4 should match Status
+            const skipFlags = parseInt(skip, 10) || 0;
+            const statusFlags = parseInt(expectedStatus, 10) || 0;
+            const skipVisionVacuum = skipFlags & 6; // Bits 1 and 2 (vacuum and vision)
+            const statusVisionVacuum = statusFlags & 6;
+
+            if (skipVisionVacuum !== statusVisionVacuum) {
+              mismatchCount++;
+            }
+          });
+
+          if (mismatchCount > 0) {
+            issues.push({
+              type: 'skip_status_mismatch',
+              count: mismatchCount,
+              message: `${mismatchCount} EComponent(s) have Skip flags that don't match their Station.Status. Per Charmhigh spec, EComponent.Skip should include the same vision/vacuum flags as Station.Status. This may prevent the machine from running.`
+            });
+          }
         }
       }
 
@@ -1895,6 +2187,7 @@
       ]);
 
       // Create EComponent table with correct STNo. references
+      // PHead must be in position 3 (after ID, before STNo.) per Charmhigh machine expectation
       const eHeader = ['Table','No.','ID','PHead','STNo.','DeltX','DeltY','Angle','Height','Skip','Speed','Explain','Note','Delay'];
       const ecomp = ensureDpvTable('EComponent');
       ecomp.header = eHeader;
@@ -1924,13 +2217,13 @@
           'EComponent',
           String(idx),        // No.
           String(idx+1),      // ID
-          '1',                // PHead
+          '1',                // PHead (position 3, after ID)
           String(stNo),       // STNo. (linked to Station ID)
           String(posx),       // DeltX (with offset applied)
           String(posy),       // DeltY (with offset applied)
           String(angle),      // Angle
           '0.5',              // Height
-          '0',                // Skip
+          '0',                // Skip (0=place, 1=skip; vision flags applied on save)
           '0',                // Speed
           val,                // Explain (Val)
           note,               // Note  (Ref - Package)
@@ -1949,7 +2242,7 @@
       // Auto-apply Master Feeder Library settings to matching Station entries
       const libraryMatches = autoApplyLibraryToModel();
       if (libraryMatches > 0) {
-        console.log(`Auto-applied library settings to ${libraryMatches} station(s).`);
+        appLog(`Auto-applied library settings to ${libraryMatches} station(s).`);
       }
 
       renderDpvTabsFromModel();
@@ -2778,59 +3071,21 @@
       try {
         rebuildDpvModelFromDom();
 
-        // Validate before saving
+        // Validate before saving - log issues but proceed without prompts
         const { issues, warnings } = validateDpv();
-      if (issues.length > 0) {
-        let msg = '=== DPV VALIDATION ERRORS ===\n\n';
-        issues.forEach((issue, i) => {
-          msg += `${i + 1}. ${issue.message}\n`;
-        });
 
-        // Check if we can auto-fix STNo. issues
-        const hasStNoIssues = issues.some(i => i.type === 'missing_station');
-        if (hasStNoIssues) {
-          msg += '\nAttempt auto-fix? (Matches EComponent values to Station Notes)';
-          if (confirm(msg)) {
-            const fixed = fixStNoReferences();
-            if (fixed > 0) {
-              alert(`Fixed ${fixed} STNo. reference(s). Continuing with save...`);
-              rebuildDpvModelFromDom(); // Refresh model after fix
-            } else {
-              alert('Could not auto-fix. Station Notes may not match EComponent Explain values.\n\nCancelling save.');
-              return;
-            }
-          } else {
-            // Ask if they want to save anyway
-            if (!confirm('Save with errors anyway?')) return;
-          }
-        } else {
-          msg += '\nSave anyway?';
-          if (!confirm(msg)) return;
+        // Filter out file header warnings (they will be auto-fixed on save)
+        const realWarnings = warnings.filter(w => w.type !== 'file_header_generic' && w.type !== 'pcbfile_header_missing');
+
+        // Log validation issues (no dialogs to avoid blocking file picker)
+        if (issues.length > 0) {
+          appLog('DPV validation errors (will be auto-fixed where possible):', 'warn');
+          issues.forEach((issue, i) => appLog(`  ${i + 1}. ${issue.message}`, 'warn'));
         }
-      }
-
-      if (warnings.length > 0) {
-        let warnMsg = 'Warnings:\n';
-        warnings.forEach((w, i) => {
-          warnMsg += `${i + 1}. ${w.message}\n`;
-        });
-
-        // Check for Panel_Array issues that can be fixed
-        const hasPanelIssues = warnings.some(w => w.type === 'panel_array_zero' || w.type === 'panel_array_duplicate');
-        if (hasPanelIssues) {
-          warnMsg += '\nFix Panel_Array issues? (Remove zero/duplicate rows)';
-          if (confirm(warnMsg)) {
-            const fixed = fixPanelArrayIssues();
-            if (fixed > 0) {
-              alert(`Removed ${fixed} problematic Panel_Array row(s). Continuing with save...`);
-              rebuildDpvModelFromDom();
-            }
-          }
-        } else {
-          warnMsg += '\nContinue with save?';
-          if (!confirm(warnMsg)) return;
+        if (realWarnings.length > 0) {
+          appLog('DPV validation warnings:');
+          realWarnings.forEach((w, i) => appLog(`  ${i + 1}. ${w.message}`));
         }
-      }
 
       // Count skipped components (they are always excluded from DPV export)
       let skippedCount = 0;
@@ -2878,6 +3133,60 @@
             row[deltXIdx] = formatCoord(x);
             row[deltYIdx] = formatCoord(y);
           });
+        }
+
+        // Ensure PHead is in position 3 (after ID, before STNo.) - Charmhigh machine expects fixed column positions
+        const pheadIdx = ecomp.header.indexOf('PHead');
+        const idIdx = ecomp.header.indexOf('ID');
+        const expectedPheadPos = idIdx + 1; // PHead should be right after ID
+
+        if (pheadIdx === -1) {
+          // PHead doesn't exist - add it in position 3
+          ecomp.header.splice(expectedPheadPos, 0, 'PHead');
+          ecomp.rows.forEach(row => {
+            row.splice(expectedPheadPos, 0, '1');
+          });
+        } else if (pheadIdx !== expectedPheadPos) {
+          // PHead exists but is in wrong position - move it to position 3
+          const pheadHeader = ecomp.header.splice(pheadIdx, 1)[0];
+          ecomp.header.splice(expectedPheadPos, 0, pheadHeader);
+          ecomp.rows.forEach(row => {
+            const pheadVal = row.splice(pheadIdx, 1)[0];
+            row.splice(expectedPheadPos, 0, pheadVal);
+          });
+        }
+
+        // Apply Station.Status vision/vacuum flags to EComponent.Skip before saving
+        // User's Skip (0=place, 1=skip) is preserved, but vision flags (2,4) are added from Station
+        const station = dpvModel.tables['Station'];
+        if (station && station.rows.length) {
+          const stIdIdx = station.header.indexOf('ID');
+          const stStatusIdx = station.header.indexOf('Status');
+          const ecStNoIdx = ecomp.header.indexOf('STNo.');
+          const ecSkipIdx = ecomp.header.indexOf('Skip');
+
+          if (stIdIdx !== -1 && stStatusIdx !== -1 && ecStNoIdx !== -1 && ecSkipIdx !== -1) {
+            // Build map of Station ID to Status flags
+            const stationStatusMap = {};
+            station.rows.forEach(row => {
+              const id = (row[stIdIdx] || '').trim();
+              const status = parseInt(row[stStatusIdx], 10) || 0;
+              if (id) stationStatusMap[id] = status;
+            });
+
+            // Apply vision/vacuum flags from Station.Status to EComponent.Skip
+            ecomp.rows.forEach(row => {
+              const stNo = (row[ecStNoIdx] || '').trim();
+              const currentSkip = parseInt(row[ecSkipIdx], 10) || 0;
+              const stationStatus = stationStatusMap[stNo] || 0;
+
+              // Keep user's skip flag (bit 0), add vision/vacuum flags from Station (bits 1,2)
+              const userSkipFlag = currentSkip & 1; // Preserve skip=1 if set
+              const visionVacuumFlags = stationStatus & 6; // Get bits 1,2 from Station.Status
+              const newSkip = userSkipFlag | visionVacuumFlags;
+              row[ecSkipIdx] = String(newSkip);
+            });
+          }
         }
       }
 
@@ -2929,10 +3238,20 @@
         }
       }
 
-      const text = dpvToText();
-
       // Ensure .dpv extension for Charmhigh machine compatibility
       let dpvFilename = lastDpvFilename.replace(/\.(dpv|stack|csv|pos)$/i, '') + '.dpv';
+
+      // CRITICAL: Update header FILE and PCBFILE to match actual filename
+      // Per Charmhigh spec, FILE must accurately match the file name or machine won't run
+      const baseFilename = dpvFilename.replace(/^.*[\\\/]/, ''); // Remove path, keep just filename
+      const csvFilename = baseFilename.replace(/\.dpv$/i, '.csv');
+      dpvModel.headerLines = dpvModel.headerLines.map(line => {
+        if (line.startsWith('FILE,')) return 'FILE,' + baseFilename;
+        if (line.startsWith('PCBFILE,')) return 'PCBFILE,' + csvFilename;
+        return line;
+      });
+
+      const text = dpvToText();
       const savedName = await saveFileWithDialog(text, dpvFilename, [
         { description: 'DPV files (Charmhigh standard)', accept: { 'text/plain': ['.dpv'] } }
       ]);
@@ -2941,17 +3260,22 @@
         if (savedName.toLowerCase().endsWith('.dpv')) {
           lastDpvFilename = savedName;
         }
-        // Notify user about excluded skipped components
-        if (skippedCount > 0) {
-          alert(`DPV saved. ${skippedCount} skipped component(s) were excluded from the file.`);
+
+        // Log save info (no alerts during save to avoid dialog issues)
+        const actualFilename = savedName.replace(/^.*[\\\/]/, '');
+        if (actualFilename.toLowerCase() !== baseFilename.toLowerCase()) {
+          appLog(`DPV saved but filename mismatch: saved as "${actualFilename}" but FILE header says "${baseFilename}"`, 'warn');
         }
+        if (skippedCount > 0) {
+          appLog(`DPV saved. ${skippedCount} skipped component(s) were excluded.`);
+        }
+        appLog(`DPV saved: ${savedName}`);
       }
 
       // Restore the displayed data (re-read from DOM to undo changes to model)
       rebuildDpvModelFromDom();
       } catch (err) {
-        console.error('Save DPV error:', err);
-        alert('Error saving DPV: ' + err.message);
+        appLog('Save DPV error: ' + err.message, 'error');
       }
     });
 
@@ -3399,7 +3723,7 @@
         const data = localStorage.getItem(LIBRARY_STORAGE_KEY);
         return data ? JSON.parse(data) : {};
       } catch (e) {
-        console.warn('Failed to load feeder library:', e);
+        appLog('Failed to load feeder library: ' + e.message, 'warn');
         return {};
       }
     }
@@ -3409,8 +3733,7 @@
       try {
         localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(library));
       } catch (e) {
-        console.error('Failed to save feeder library:', e);
-        alert('Failed to save library to browser storage.');
+        appLog('Failed to save feeder library: ' + e.message, 'error');
       }
     }
 

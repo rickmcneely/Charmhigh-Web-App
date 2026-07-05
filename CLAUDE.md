@@ -26,14 +26,16 @@ dpvModel = {
 }
 ```
 
+### File Format Documentation 
+~/CHWebApp/DPV_File_Format_Documentation
 ### Tab Structure
 1. **CSV/POS** - Load/edit KiCad placement data
 2. **Components** - DPV EComponent table (placement coordinates)
 3. **Material Stacks** - DPV Station table (feeder assignments)
 4. **Panel List** - Panel_Array and Panel_Coord tables
 
-### Custom .stack Format
-Extended DPV format (`.stack` extension) with additional `PHead` column in Station table. Standard DPV export strips this column for machine compatibility. Used for saving/loading Material Stacks.
+### Custom DPVx Format
+Extended DPV format with additional `PHead` column in Station table. Standard DPV export strips this column for machine compatibility.
 
 ### Browser Storage
 - **Master Feeder Library**: `localStorage` key `chmt48vb_feeder_library` - stores feeder configurations by component value (Note)
@@ -61,3 +63,6 @@ sshpass -p 'JLF6ezBhtFEt2@?' scp /home/zditech/CHWebApp/index.html root@srv62904
 - **Station.Note** matches **EComponent.Explain** (component value like "10k")
 - IDs must be unique; changing an ID updates all STNo. references
 - Standard Charmhigh DPV does not include PHead in Station table
+- **CRITICAL**: PHead in EComponent must be in position 3 (after ID, before STNo.). Machine expects fixed column positions.
+- **CRITICAL**: FILE header must match actual filename exactly or machine won't run
+- **CRITICAL**: EComponent.Skip flags must match Station.Status flags (vision=4, vacuum=2). Skip=0 with Status=4 causes machine to fail silently.
